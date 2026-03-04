@@ -1,22 +1,43 @@
+//! Comb: YAML 1.2 parser, renderer, and JSON interop library for Zig.
+//!
+//! Parses YAML into either `comb.Value` (full YAML fidelity) or
+//! `std.json.Value` (seamless JSON interop). Supports block and flow
+//! collections, all scalar styles, anchors/aliases, merge keys, tags,
+//! multi-document streams, and the YAML 1.2 Core Schema.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const value_mod = @import("Value.zig");
+
+/// A YAML value with full fidelity: scalars, collections, binary, and tags.
 pub const Value = value_mod.Value;
+
+/// A key-value pair in a YAML mapping, preserving insertion order.
 pub const Entry = value_mod.Entry;
+
+/// A tagged YAML node (e.g. `!custom value`).
 pub const Tagged = value_mod.Tagged;
 
+/// Options controlling how YAML is parsed.
 pub const ParseOptions = struct {
+    /// How duplicate mapping keys are handled.
     duplicate_keys: DuplicateKeyBehavior = .err,
+    /// Maximum nesting depth (null for unlimited).
     max_depth: ?u16 = 256,
+    /// If non-null, receives error location details on parse failure.
     diagnostics: ?*Diagnostics = null,
 };
 
+/// Strategy for handling duplicate keys within a single mapping.
 pub const DuplicateKeyBehavior = enum {
+    /// Return an error on duplicate keys.
     err,
+    /// Silently keep the last value for duplicate keys.
     last_wins,
 };
 
+/// Error location details populated when parsing fails.
 pub const Diagnostics = struct {
     line: usize = 0,
     column: usize = 0,
@@ -24,11 +45,16 @@ pub const Diagnostics = struct {
     source_line: []const u8 = "",
 };
 
+/// Options controlling output formatting for JSON and YAML rendering.
 pub const OutputOptions = struct {
+    /// Sort mapping keys alphabetically in output.
     sort_keys: bool = false,
+    /// Number of spaces per indentation level.
     indent: u8 = 2,
 };
 
+/// Wrapper for a parsed result that owns an arena allocator.
+/// Call `deinit()` to free all memory when done.
 pub fn Parsed(comptime T: type) type {
     return struct {
         value: T,
@@ -114,7 +140,7 @@ pub fn parseAll(allocator: Allocator, input: []const u8) Error!Parsed([]const Va
 pub fn toJson(allocator: Allocator, input: []const u8, options: OutputOptions) Error![]const u8 {
     var parsed = try parse(allocator, input);
     defer parsed.deinit();
-    return valueToJsonAlloc(allocator, parsed.value, options);
+    return valueToJson(allocator, parsed.value, options);
 }
 
 /// Parse YAML and render back to normalized YAML.
@@ -130,7 +156,8 @@ pub fn render(allocator: Allocator, value: Value, options: OutputOptions) Error!
     return Renderer.render(allocator, value, options);
 }
 
-fn valueToJsonAlloc(allocator: Allocator, value: Value, options: OutputOptions) error{OutOfMemory}![]const u8 {
+/// Serialize a comb.Value to a JSON string.
+pub fn valueToJson(allocator: Allocator, value: Value, options: OutputOptions) error{OutOfMemory}![]const u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -188,7 +215,7 @@ fn sortedToStdJson(allocator: Allocator, value: Value) error{OutOfMemory}!std.js
     }
 }
 
-fn indentToWhitespace(indent: u8) std.json.Stringify.Options.Whitespace {
+pub fn indentToWhitespace(indent: u8) @TypeOf(@as(std.json.Stringify.Options, .{}).whitespace) {
     return switch (indent) {
         0 => .minified,
         1 => .indent_1,
@@ -203,4 +230,5 @@ test {
     _ = value_mod;
     _ = @import("Parser.zig");
     _ = @import("Renderer.zig");
+    _ = @import("yaml_suite_runner.zig");
 }

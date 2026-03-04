@@ -33,11 +33,11 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, arg, "--indent")) {
             i += 1;
             if (i >= args.len) {
-                try std.io.getStdErr().writer().writeAll("error: --indent requires a number\n");
+                std.debug.print("error: --indent requires a number\n", .{});
                 std.process.exit(1);
             }
             indent = std.fmt.parseInt(u8, args[i], 10) catch {
-                try std.io.getStdErr().writer().writeAll("error: invalid indent value\n");
+                std.debug.print("error: invalid indent value\n", .{});
                 std.process.exit(1);
             };
         } else if (std.mem.eql(u8, arg, "--strict")) {
@@ -47,32 +47,36 @@ pub fn main() !void {
         } else if (arg[0] != '-') {
             file_path = arg;
         } else {
-            try std.io.getStdErr().writer().print("error: unknown option: {s}\n", .{arg});
+            std.debug.print("error: unknown option: {s}\n", .{arg});
             std.process.exit(1);
         }
     }
 
     const input = if (file_path) |path|
         std.fs.cwd().readFileAlloc(alloc, path, 10 * 1024 * 1024) catch |err| {
-            try std.io.getStdErr().writer().print("error: cannot read '{s}': {}\n", .{ path, err });
+            std.debug.print("error: cannot read '{s}': {}\n", .{ path, err });
             std.process.exit(1);
         }
-    else
-        std.io.getStdIn().readAllAlloc(alloc, 10 * 1024 * 1024) catch |err| {
-            try std.io.getStdErr().writer().print("error: cannot read stdin: {}\n", .{err});
+    else blk: {
+        var stdin_buf: [4096]u8 = undefined;
+        var stdin_r = std.fs.File.stdin().reader(&stdin_buf);
+        break :blk stdin_r.interface.allocRemaining(alloc, .limited(10 * 1024 * 1024)) catch |err| {
+            std.debug.print("error: cannot read stdin: {}\n", .{err});
             std.process.exit(1);
         };
+    };
 
-    const stdout = std.io.getStdOut().writer();
-    const stderr = std.io.getStdErr().writer();
+    var stdout_buf: [4096]u8 = undefined;
+    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    const stdout = &stdout_w.interface;
+    defer stdout.flush() catch {};
 
     const out_opts: comb.OutputOptions = .{ .sort_keys = sort_keys, .indent = indent };
     const parse_opts: comb.ParseOptions = .{ .duplicate_keys = duplicate_keys };
-    _ = parse_opts;
 
     if (all_docs) {
         var parsed = comb.parseAll(alloc, input) catch |err| {
-            try stderr.print("error: {}\n", .{err});
+            std.debug.print("error: {}\n", .{err});
             std.process.exit(1);
         };
         defer parsed.deinit();
@@ -82,7 +86,7 @@ pub fn main() !void {
                 for (parsed.value, 0..) |doc, idx| {
                     if (idx > 0) try stdout.writeAll("---\n");
                     const rendered = comb.render(alloc, doc, out_opts) catch |err| {
-                        try stderr.print("error: {}\n", .{err});
+                        std.debug.print("error: {}\n", .{err});
                         std.process.exit(1);
                     };
                     try stdout.writeAll(rendered);
@@ -94,12 +98,13 @@ pub fn main() !void {
                 for (parsed.value, 0..) |doc, idx| {
                     if (idx > 0) try stdout.writeByte(',');
                     const json_val = doc.toStdJsonValue(alloc) catch |err| {
-                        try stderr.print("error: {}\n", .{err});
+                        std.debug.print("error: {}\n", .{err});
                         std.process.exit(1);
                     };
-                    const ws = indentToWhitespace(if (mode == .json_pretty) indent else 0);
-                    std.json.Stringify.value(json_val, .{ .whitespace = ws }, &stdout) catch |err| {
-                        try stderr.print("error: {}\n", .{err});
+                    const ws = comb.indentToWhitespace(if (mode == .json_pretty) indent else 0);
+                    var jw: std.json.Stringify = .{ .writer = stdout, .options = .{ .whitespace = ws } };
+                    jw.write(json_val) catch |err| {
+                        std.debug.print("error: {}\n", .{err});
                         std.process.exit(1);
                     };
                 }
@@ -109,27 +114,42 @@ pub fn main() !void {
     } else {
         switch (mode) {
             .yaml => {
-                const rendered = comb.toYaml(alloc, input, out_opts) catch |err| {
-                    try stderr.print("error: {}\n", .{err});
+                var parsed = comb.parseFromSlice(comb.Value, alloc, input, parse_opts) catch |err| {
+                    std.debug.print("error: {}\n", .{err});
+                    std.process.exit(1);
+                };
+                defer parsed.deinit();
+                const rendered = comb.render(alloc, parsed.value, out_opts) catch |err| {
+                    std.debug.print("error: {}\n", .{err});
                     std.process.exit(1);
                 };
                 try stdout.writeAll(rendered);
                 try stdout.writeByte('\n');
             },
             .json_compact => {
-                const json = comb.toJson(alloc, input, .{
+                var parsed = comb.parseFromSlice(comb.Value, alloc, input, parse_opts) catch |err| {
+                    std.debug.print("error: {}\n", .{err});
+                    std.process.exit(1);
+                };
+                defer parsed.deinit();
+                const json = comb.valueToJson(alloc, parsed.value, .{
                     .sort_keys = sort_keys,
                     .indent = 0,
                 }) catch |err| {
-                    try stderr.print("error: {}\n", .{err});
+                    std.debug.print("error: {}\n", .{err});
                     std.process.exit(1);
                 };
                 try stdout.writeAll(json);
                 try stdout.writeByte('\n');
             },
             .json_pretty => {
-                const json = comb.toJson(alloc, input, out_opts) catch |err| {
-                    try stderr.print("error: {}\n", .{err});
+                var parsed = comb.parseFromSlice(comb.Value, alloc, input, parse_opts) catch |err| {
+                    std.debug.print("error: {}\n", .{err});
+                    std.process.exit(1);
+                };
+                defer parsed.deinit();
+                const json = comb.valueToJson(alloc, parsed.value, out_opts) catch |err| {
+                    std.debug.print("error: {}\n", .{err});
                     std.process.exit(1);
                 };
                 try stdout.writeAll(json);
@@ -140,7 +160,10 @@ pub fn main() !void {
 }
 
 fn printUsage() !void {
-    const stdout = std.io.getStdOut().writer();
+    var buf: [4096]u8 = undefined;
+    var w = std.fs.File.stdout().writer(&buf);
+    const stdout = &w.interface;
+    defer stdout.flush() catch {};
     try stdout.writeAll(
         \\Usage: comb [OPTIONS] [FILE]
         \\
@@ -158,15 +181,4 @@ fn printUsage() !void {
         \\  -h, --help              Show this help
         \\
     );
-}
-
-fn indentToWhitespace(indent: u8) std.json.Stringify.Options.Whitespace {
-    return switch (indent) {
-        0 => .minified,
-        1 => .indent_1,
-        2 => .indent_2,
-        3 => .indent_3,
-        4 => .indent_4,
-        else => .indent_8,
-    };
 }

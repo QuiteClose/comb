@@ -30,6 +30,7 @@ pub fn parseDocument(self: *Parser) root.Error!Value {
 
     while (!self.atEnd() and self.startsWith("%")) {
         self.skipDirective();
+        self.skipWhitespaceAndComments();
     }
 
     if (!self.atEnd() and self.startsWith("---")) {
@@ -62,7 +63,7 @@ pub fn parseAllDocuments(self: *Parser) root.Error![]const Value {
             if (!self.atEnd() and (self.peek() == '\n' or self.peek() == '\r')) {
                 self.skipNewline();
                 self.skipWhitespaceAndComments();
-                if (self.atEnd() or self.startsWith("---") or self.startsWith("...")) {
+                if (self.atEnd() or self.isDocumentMarker()) {
                     docs.append(self.allocator, .{ .null_val = {} }) catch return error.OutOfMemory;
                 } else {
                     const val = try self.parseNode(0);
@@ -98,7 +99,7 @@ pub fn parseAllDocuments(self: *Parser) root.Error![]const Value {
 fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
     self.skipWhitespaceAndComments();
     if (self.atEnd()) return .{ .null_val = {} };
-    if (self.startsWith("---") or self.startsWith("...")) return .{ .null_val = {} };
+    if (self.isDocumentMarker()) return .{ .null_val = {} };
 
     const col = self.currentCol();
     if (col < min_col) return .{ .null_val = {} };
@@ -121,12 +122,19 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
         } else break;
     }
 
+    if (!self.atEnd() and self.peek() == '#') {
+        self.skipToEndOfLine();
+    }
     if (self.atEnd() or self.atEndOfLine()) {
         self.skipNewline();
         self.skipWhitespaceAndComments();
         if (self.atEnd()) return self.applyTagAndAnchor(.{ .null_val = {} }, tag, anchor_name);
         const next_col = self.currentCol();
-        if (next_col <= col) return self.applyTagAndAnchor(.{ .null_val = {} }, tag, anchor_name);
+        if (tag != null or anchor_name != null) {
+            const cont_result = try self.parseNode(next_col);
+            return self.applyTagAndAnchor(cont_result, tag, anchor_name);
+        }
+        if (next_col <= col) return .{ .null_val = {} };
         const result = try self.parseNode(next_col);
         return self.applyTagAndAnchor(result, tag, anchor_name);
     }
@@ -136,6 +144,13 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
 
     if (c == '*') {
         result = try self.parseAlias();
+        self.skipInlineSpace();
+        if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
+            (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+            self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
+        {
+            result = try self.parseBlockMappingFromFirstKey(result, col);
+        }
     } else if (c == '[') {
         result = try self.parseFlowSequence();
     } else if (c == '{') {
@@ -147,7 +162,10 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
-            result = try self.parseBlockMappingFromFirstKey(.{ .string = str }, col);
+            var key: Value = .{ .string = str };
+            if (tag) |t| { key = try self.applyTag(key, t); tag = null; }
+            if (anchor_name) |name| { self.anchors.put(name, key) catch return error.OutOfMemory; anchor_name = null; }
+            result = try self.parseBlockMappingFromFirstKey(key, col);
         } else {
             result = .{ .string = str };
         }
@@ -158,17 +176,23 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
-            result = try self.parseBlockMappingFromFirstKey(.{ .string = str }, col);
+            var key: Value = .{ .string = str };
+            if (tag) |t| { key = try self.applyTag(key, t); tag = null; }
+            if (anchor_name) |name| { self.anchors.put(name, key) catch return error.OutOfMemory; anchor_name = null; }
+            result = try self.parseBlockMappingFromFirstKey(key, col);
         } else {
             result = .{ .string = str };
         }
     } else if (c == '|' or c == '>') {
-        result = try self.parseBlockScalar();
+        const pi: ?usize = if (min_col > 0) min_col - 1 else null;
+        result = try self.parseBlockScalar(pi);
     } else if (c == '?' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+        self.input[self.pos + 1] == '\t' or
         self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
     {
         result = try self.parseBlockMappingWithComplexKey(col);
     } else if (c == '-' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+        self.input[self.pos + 1] == '\t' or
         self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
     {
         result = try self.parseBlockSequence(col);
@@ -179,6 +203,12 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
         const line = self.readToEndOfUnquotedLine();
         if (findKeyValueSep(line) != null) {
             self.pos = line_start;
+            if (tag != null or anchor_name != null) {
+                var key = try self.parseBlockMappingKey();
+                if (tag) |t| key = try self.applyTag(key, t);
+                if (anchor_name) |name| self.anchors.put(name, key) catch return error.OutOfMemory;
+                return self.parseBlockMappingFromFirstKey(key, col);
+            }
             result = try self.parseBlockMapping(col);
         } else {
             self.pos = line_start;
@@ -204,7 +234,7 @@ fn applyTagAndAnchor(self: *Parser, value: Value, tag: ?[]const u8, anchor_name:
 }
 
 fn applyTag(self: *Parser, value: Value, tag: []const u8) root.Error!Value {
-    if (std.mem.eql(u8, tag, "!!str")) {
+    if (std.mem.eql(u8, tag, "!") or std.mem.eql(u8, tag, "!!str")) {
         return .{ .string = try self.valueToString(value) };
     } else if (std.mem.eql(u8, tag, "!!int")) {
         return switch (value) {
@@ -243,7 +273,7 @@ fn applyTag(self: *Parser, value: Value, tag: []const u8) root.Error!Value {
             },
             else => value,
         };
-    } else if (std.mem.eql(u8, tag, "!!seq") or std.mem.eql(u8, tag, "!!map")) {
+    } else if (std.mem.eql(u8, tag, "!!seq") or std.mem.eql(u8, tag, "!!map") or std.mem.eql(u8, tag, "!!set")) {
         return value;
     } else {
         const val_ptr = self.allocator.create(Value) catch return error.OutOfMemory;
@@ -267,57 +297,7 @@ fn valueToString(self: *Parser, value: Value) root.Error![]const u8 {
 
 fn parseBlockMapping(self: *Parser, indent: usize) root.Error!Value {
     var entries: std.ArrayList(Entry) = .empty;
-
-    while (!self.atEnd()) {
-        self.skipBlankAndCommentLines();
-        if (self.atEnd()) break;
-        if (self.startsWith("---") or self.startsWith("...")) break;
-
-        const col = self.currentCol();
-        if (col != indent) break;
-
-        if (self.peek() == '?' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ')) {
-            self.pos += 1;
-            if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
-            self.depth += 1;
-            const key = try self.parseNode(indent + 1);
-            self.depth -= 1;
-
-            self.skipBlankAndCommentLines();
-            var value: Value = .{ .null_val = {} };
-            if (!self.atEnd() and self.currentCol() == indent and self.peek() == ':') {
-                self.pos += 1;
-                if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
-                self.skipInlineSpace();
-                value = try self.parseBlockMappingValue(indent);
-            }
-
-            try self.checkDuplicateKey(entries.items, key);
-            entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
-            continue;
-        }
-
-        if (self.peek() == '<' and self.pos + 1 < self.input.len and self.input[self.pos + 1] == '<') {
-            self.pos += 2;
-            self.skipInlineSpace();
-            if (!self.atEnd() and self.peek() == ':') {
-                self.pos += 1;
-                self.skipInlineSpace();
-                try self.parseMergeValue(&entries, indent);
-                continue;
-            }
-            self.pos -= 2;
-        }
-
-        const key = try self.parseBlockMappingKey();
-        try self.consumeColon();
-        self.skipInlineSpace();
-        const value = try self.parseBlockMappingValue(indent);
-
-        try self.checkDuplicateKey(entries.items, key);
-        entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
-    }
-
+    try self.parseRemainingMappingEntries(&entries, indent);
     return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
@@ -329,13 +309,38 @@ fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize)
     const first_value = try self.parseBlockMappingValue(indent);
     entries.append(self.allocator, .{ .key = first_key, .value = first_value }) catch return error.OutOfMemory;
 
+    try self.parseRemainingMappingEntries(&entries, indent);
+
+    return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
+}
+
+fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), indent: usize) root.Error!void {
     while (!self.atEnd()) {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
-        if (self.startsWith("---") or self.startsWith("...")) break;
+        if (self.isDocumentMarker()) break;
 
         const col = self.currentCol();
         if (col != indent) break;
+
+        if (self.peek() == '?' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ')) {
+            self.pos += 1;
+            if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
+            self.depth += 1;
+            const key = try self.parseNode(indent + 1);
+            self.depth -= 1;
+            self.skipBlankAndCommentLines();
+            var value: Value = .{ .null_val = {} };
+            if (!self.atEnd() and self.currentCol() == indent and self.peek() == ':') {
+                self.pos += 1;
+                if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
+                self.skipInlineSpace();
+                value = try self.parseBlockMappingValue(indent);
+            }
+            try self.checkDuplicateKey(entries.items, key);
+            entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
+            continue;
+        }
 
         if (self.peek() == '<' and self.pos + 1 < self.input.len and self.input[self.pos + 1] == '<') {
             self.pos += 2;
@@ -343,13 +348,33 @@ fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize)
             if (!self.atEnd() and self.peek() == ':') {
                 self.pos += 1;
                 self.skipInlineSpace();
-                try self.parseMergeValue(&entries, indent);
+                try self.parseMergeValue(entries, indent);
                 continue;
             }
             self.pos -= 2;
         }
 
-        const key = try self.parseBlockMappingKey();
+        var key_anchor: ?[]const u8 = null;
+        var key_tag: ?[]const u8 = null;
+        while (!self.atEnd()) {
+            if (self.peek() == '&') {
+                key_anchor = try self.parseAnchorDef();
+                self.skipInlineSpace();
+            } else if (self.peek() == '!') {
+                key_tag = try self.parseTag();
+                self.skipInlineSpace();
+            } else break;
+        }
+        var key: Value = undefined;
+        if (!self.atEnd() and self.peek() == '*') {
+            key = try self.parseAlias();
+            self.skipInlineSpace();
+        } else {
+            key = try self.parseBlockMappingKey();
+        }
+        if (key_tag) |t| key = try self.applyTag(key, t);
+        if (key_anchor) |name| self.anchors.put(name, key) catch return error.OutOfMemory;
+        self.skipInlineSpace();
         try self.consumeColon();
         self.skipInlineSpace();
         const value = try self.parseBlockMappingValue(indent);
@@ -357,8 +382,6 @@ fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize)
         try self.checkDuplicateKey(entries.items, key);
         entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
     }
-
-    return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
 fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) root.Error!Value {
@@ -367,7 +390,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) root.Error!Valu
     while (!self.atEnd()) {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
-        if (self.startsWith("---") or self.startsWith("...")) break;
+        if (self.isDocumentMarker()) break;
 
         const col = self.currentCol();
         if (col != indent) break;
@@ -467,17 +490,21 @@ fn parseBlockMappingKey(self: *Parser) root.Error!Value {
     while (self.pos < self.input.len) {
         if (self.input[self.pos] == ':' and
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+            self.input[self.pos + 1] == '\t' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
             break;
         }
         if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') break;
-        if (self.input[self.pos] == '#' and self.pos > start and self.input[self.pos - 1] == ' ') break;
+        if (self.input[self.pos] == '#' and self.pos > start and
+            (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t'))
+        {
+            break;
+        }
         self.pos += 1;
     }
 
     const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
-    if (raw.len == 0) return self.fail("UnexpectedCharacter");
     return .{ .string = raw };
 }
 
@@ -500,7 +527,14 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) return .{ .null_val = {} };
         const next_col = self.currentCol();
-        if (next_col <= map_indent) return .{ .null_val = {} };
+        if (next_col <= map_indent) {
+            if (next_col == map_indent and self.isBlockSequenceIndicator()) {
+                self.depth += 1;
+                defer self.depth -= 1;
+                return self.parseBlockSequence(next_col);
+            }
+            return .{ .null_val = {} };
+        }
         self.depth += 1;
         defer self.depth -= 1;
         return self.parseNode(next_col);
@@ -512,7 +546,14 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) return .{ .null_val = {} };
         const next_col = self.currentCol();
-        if (next_col <= map_indent) return .{ .null_val = {} };
+        if (next_col <= map_indent) {
+            if (next_col == map_indent and self.isBlockSequenceIndicator()) {
+                self.depth += 1;
+                defer self.depth -= 1;
+                return self.parseBlockSequence(next_col);
+            }
+            return .{ .null_val = {} };
+        }
         self.depth += 1;
         defer self.depth -= 1;
         return self.parseNode(next_col);
@@ -524,7 +565,7 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
     const c = self.peek();
     if (c == '[') return self.parseFlowSequence();
     if (c == '{') return self.parseFlowMapping();
-    if (c == '|' or c == '>') return self.parseBlockScalar();
+    if (c == '|' or c == '>') return self.parseBlockScalar(map_indent);
     if (c == '*') return self.parseAlias();
     if (c == '&') {
         const name = try self.parseAnchorDef();
@@ -553,14 +594,18 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
     if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
     if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
 
-    return self.parseInlineValue();
+    return self.parsePlainScalar(map_indent + 1);
 }
 
 fn parseInlineValue(self: *Parser) root.Error!Value {
     const start = self.pos;
     while (self.pos < self.input.len) {
         if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') break;
-        if (self.input[self.pos] == '#' and self.pos > start and self.input[self.pos - 1] == ' ') break;
+        if (self.input[self.pos] == '#' and self.pos > start and
+            (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t'))
+        {
+            break;
+        }
         self.pos += 1;
     }
     const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
@@ -579,19 +624,20 @@ fn parseBlockSequence(self: *Parser, indent: usize) root.Error!Value {
     while (!self.atEnd()) {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
-        if (self.startsWith("---") or self.startsWith("...")) break;
+        if (self.isDocumentMarker()) break;
 
         const col = self.currentCol();
         if (col != indent) break;
         if (self.peek() != '-') break;
         if (self.pos + 1 < self.input.len and self.input[self.pos + 1] != ' ' and
+            self.input[self.pos + 1] != '\t' and
             self.input[self.pos + 1] != '\n' and self.input[self.pos + 1] != '\r')
         {
             break;
         }
 
         self.pos += 1;
-        if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
+        if (!self.atEnd() and (self.peek() == ' ' or self.peek() == '\t')) self.pos += 1;
 
         self.depth += 1;
         defer self.depth -= 1;
@@ -642,7 +688,7 @@ fn parseFlowSequence(self: *Parser) root.Error!Value {
         const val = try self.parseFlowValue();
 
         self.skipFlowWhitespace();
-        if (!self.atEnd() and self.peek() == ':') {
+        if (!self.atEnd() and self.peek() == ':' and self.isFlowIndicatorNext()) {
             self.pos += 1;
             self.skipFlowWhitespace();
             const map_val = if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
@@ -689,7 +735,7 @@ fn parseFlowMapping(self: *Parser) root.Error!Value {
         }
 
         var key: Value = undefined;
-        if (self.peek() == '?') {
+        if (self.peek() == '?' and self.isFlowIndicatorNext()) {
             self.pos += 1;
             self.skipFlowWhitespace();
             key = try self.parseFlowValue();
@@ -743,29 +789,71 @@ fn parseFlowValue(self: *Parser) root.Error!Value {
         return self.applyTag(val, t);
     }
 
-    const start = self.pos;
-    while (self.pos < self.input.len) {
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(self.allocator);
+
+    while (true) {
+        const start = self.pos;
+        while (self.pos < self.input.len) {
+            const ch = self.input[self.pos];
+            if (ch == ',' or ch == ']' or ch == '}' or ch == '\n' or ch == '\r') break;
+            if (ch == ':') {
+                if (self.pos + 1 >= self.input.len) break;
+                const next = self.input[self.pos + 1];
+                if (next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
+                    next == '{' or next == '}' or next == '\n' or next == '\r') break;
+                self.pos += 1;
+                continue;
+            }
+            if (ch == '#' and self.pos > start and (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t')) break;
+            self.pos += 1;
+        }
+
+        const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+        if (raw.len > 0) {
+            parts.append(self.allocator, raw) catch return error.OutOfMemory;
+        }
+
+        if (self.pos >= self.input.len) break;
         const ch = self.input[self.pos];
-        if (ch == ',' or ch == ']' or ch == '}' or ch == ':' or ch == '\n' or ch == '\r') break;
-        if (ch == '#' and self.pos > start and self.input[self.pos - 1] == ' ') break;
-        self.pos += 1;
+        if (ch != '\n' and ch != '\r') break;
+
+        self.skipNewline();
+        self.skipInlineSpace();
+        if (self.atEnd()) break;
+        const nc = self.peek();
+        if (nc == ',' or nc == ']' or nc == '}' or nc == '#') break;
     }
 
-    const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
-    if (raw.len == 0) return .{ .null_val = {} };
-    return detectScalarType(raw);
+    if (parts.items.len == 0) return .{ .null_val = {} };
+    if (parts.items.len == 1) return detectScalarType(parts.items[0]);
+
+    var result: std.ArrayList(u8) = .empty;
+    for (parts.items, 0..) |part, i| {
+        if (i > 0) result.append(self.allocator, ' ') catch return error.OutOfMemory;
+        result.appendSlice(self.allocator, part) catch return error.OutOfMemory;
+    }
+    return detectScalarType(result.toOwnedSlice(self.allocator) catch return error.OutOfMemory);
 }
 
 fn parseFlowKey(self: *Parser) root.Error!Value {
     if (self.atEnd()) return self.fail("UnexpectedEndOfInput");
-    const c = self.peek();
-    if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
-    if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
+    const fc = self.peek();
+    if (fc == '"') return .{ .string = try self.parseDoubleQuoted() };
+    if (fc == '\'') return .{ .string = try self.parseSingleQuoted() };
 
     const start = self.pos;
     while (self.pos < self.input.len) {
         const ch = self.input[self.pos];
-        if (ch == ':' or ch == ',' or ch == '}' or ch == '\n' or ch == '\r') break;
+        if (ch == ',' or ch == '}' or ch == '\n' or ch == '\r') break;
+        if (ch == ':') {
+            if (self.pos + 1 >= self.input.len) break;
+            const next = self.input[self.pos + 1];
+            if (next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
+                next == '{' or next == '}' or next == '\n' or next == '\r') break;
+            self.pos += 1;
+            continue;
+        }
         self.pos += 1;
     }
 
@@ -776,7 +864,7 @@ fn parseFlowKey(self: *Parser) root.Error!Value {
 
 // ── Block scalar ────────────────────────────────────────────────────────
 
-fn parseBlockScalar(self: *Parser) root.Error!Value {
+fn parseBlockScalar(self: *Parser, parent_indent: ?usize) root.Error!Value {
     if (self.atEnd()) return self.fail("InvalidBlockScalar");
     const style = self.peek();
     self.pos += 1;
@@ -807,11 +895,9 @@ fn parseBlockScalar(self: *Parser) root.Error!Value {
 
     var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(self.allocator);
-
     var content_indent: ?usize = null;
     if (explicit_indent) |ei| {
-        const base = self.computeBlockScalarBase();
-        content_indent = base + ei;
+        content_indent = (parent_indent orelse 0) + ei;
     }
 
     while (self.pos < self.input.len) {
@@ -824,7 +910,11 @@ fn parseBlockScalar(self: *Parser) root.Error!Value {
 
         const stripped = std.mem.trimLeft(u8, line, " ");
         if (stripped.len == 0) {
-            lines.append(self.allocator, "") catch return error.OutOfMemory;
+            if (content_indent != null and line.len >= content_indent.?) {
+                lines.append(self.allocator, line[content_indent.?..]) catch return error.OutOfMemory;
+            } else {
+                lines.append(self.allocator, "") catch return error.OutOfMemory;
+            }
             self.pos = line_end;
             self.skipNewline();
             continue;
@@ -833,7 +923,16 @@ fn parseBlockScalar(self: *Parser) root.Error!Value {
         const line_indent = line.len - stripped.len;
 
         if (content_indent == null) {
+            if (parent_indent) |pi| {
+                if (line_indent <= pi) break;
+            }
             content_indent = line_indent;
+        } else if (lines.items.len == 0 and line_indent < content_indent.?) {
+            if (explicit_indent != null) {
+                content_indent = line_indent;
+            } else {
+                break;
+            }
         }
 
         if (line_indent < content_indent.?) break;
@@ -858,23 +957,55 @@ fn parseBlockScalar(self: *Parser) root.Error!Value {
             result.appendSlice(self.allocator, line) catch return error.OutOfMemory;
         }
     } else {
-        var i: usize = 0;
-        while (i < content_lines.len) : (i += 1) {
-            if (content_lines[i].len == 0) {
-                result.append(self.allocator, '\n') catch return error.OutOfMemory;
-            } else {
-                if (i > 0 and result.items.len > 0 and result.items[result.items.len - 1] != '\n') {
-                    result.append(self.allocator, ' ') catch return error.OutOfMemory;
+        const LineType = enum { normal, more_indented };
+
+        var prev_type: ?LineType = null;
+        var prev_blank = false;
+
+        for (content_lines, 0..) |line, i| {
+            if (line.len == 0) {
+                if (!prev_blank and prev_type == .more_indented) {
+                    result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                } else if (!prev_blank and prev_type == .normal) {
+                    const next_nb_type = findNextNonblankType(content_lines, i + 1);
+                    if (next_nb_type != null and next_nb_type.? != .normal) {
+                        result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                    }
                 }
-                result.appendSlice(self.allocator, content_lines[i]) catch return error.OutOfMemory;
+                result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                prev_blank = true;
+            } else {
+                const cur_type: LineType = if (line[0] == ' ' or line[0] == '\t')
+                    .more_indented
+                else
+                    .normal;
+
+                if (prev_type != null and !prev_blank) {
+                    if (prev_type.? == .normal and cur_type == .normal) {
+                        result.append(self.allocator, ' ') catch return error.OutOfMemory;
+                    } else {
+                        result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                    }
+                }
+
+                result.appendSlice(self.allocator, line) catch return error.OutOfMemory;
+                prev_type = cur_type;
+                prev_blank = false;
             }
         }
     }
 
     switch (chomp) {
-        .clip => result.append(self.allocator, '\n') catch return error.OutOfMemory,
+        .clip => {
+            if (content_lines.len > 0) {
+                result.append(self.allocator, '\n') catch return error.OutOfMemory;
+            }
+        },
         .keep => {
-            for (0..trailing_empties + 1) |_| {
+            if (content_lines.len > 0) {
+                result.append(self.allocator, '\n') catch return error.OutOfMemory;
+            }
+            for (0..trailing_empties) |_| {
                 result.append(self.allocator, '\n') catch return error.OutOfMemory;
             }
         },
@@ -884,35 +1015,53 @@ fn parseBlockScalar(self: *Parser) root.Error!Value {
     return .{ .string = result.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
-fn computeBlockScalarBase(self: *Parser) usize {
-    var p = self.pos;
-    if (p > 0) p -= 1;
-    while (p > 0 and self.input[p] != '\n') p -= 1;
-    if (self.input[p] == '\n') p += 1;
-    var indent: usize = 0;
-    while (p + indent < self.input.len and self.input[p + indent] == ' ') indent += 1;
-    return indent;
+fn findNextNonblankType(content_lines: []const []const u8, start: usize) ?enum { normal, more_indented } {
+    var j = start;
+    while (j < content_lines.len) : (j += 1) {
+        if (content_lines[j].len > 0) {
+            return if (content_lines[j][0] == ' ' or content_lines[j][0] == '\t')
+                .more_indented
+            else
+                .normal;
+        }
+    }
+    return null;
 }
+
 
 // ── Scalar parsing ──────────────────────────────────────────────────────
 
 fn parsePlainScalar(self: *Parser, min_col: usize) root.Error!Value {
-    var parts: std.ArrayList([]const u8) = .empty;
+    const Part = struct { text: []const u8, blank_before: bool };
+    var parts: std.ArrayList(Part) = .empty;
     defer parts.deinit(self.allocator);
 
     const first_line = self.readValueLine();
-    if (first_line.len > 0) parts.append(self.allocator, first_line) catch return error.OutOfMemory;
+    if (first_line.len > 0) parts.append(self.allocator, .{ .text = first_line, .blank_before = false }) catch return error.OutOfMemory;
     self.skipNewline();
 
     while (!self.atEnd()) {
         const saved_pos = self.pos;
-        self.skipBlankAndCommentLines();
+        var saw_blank = false;
+        while (!self.atEnd()) {
+            self.skipInlineSpace();
+            if (self.atEnd()) break;
+            if (self.input[self.pos] == '#') {
+                self.skipToEndOfLine();
+                self.skipNewline();
+                continue;
+            }
+            if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') {
+                saw_blank = true;
+                self.skipNewline();
+                continue;
+            }
+            break;
+        }
         if (self.atEnd()) break;
-        if (self.startsWith("---") or self.startsWith("...")) break;
+        if (self.isDocumentMarker()) break;
         const col = self.currentCol();
-        if (col <= min_col) break;
-        if (self.peek() == '-' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ')) break;
-        if (self.peek() == '#') break;
+        if (col < min_col) break;
 
         const line = self.readToEndOfUnquotedLine();
         const trimmed = std.mem.trimRight(u8, line, " \t");
@@ -922,7 +1071,7 @@ fn parsePlainScalar(self: *Parser, min_col: usize) root.Error!Value {
         }
 
         if (trimmed.len > 0) {
-            parts.append(self.allocator, trimmed) catch return error.OutOfMemory;
+            parts.append(self.allocator, .{ .text = trimmed, .blank_before = saw_blank }) catch return error.OutOfMemory;
             self.skipNewline();
         } else {
             self.pos = saved_pos;
@@ -933,14 +1082,20 @@ fn parsePlainScalar(self: *Parser, min_col: usize) root.Error!Value {
     if (parts.items.len == 0) return .{ .null_val = {} };
 
     if (parts.items.len == 1) {
-        return detectScalarType(parts.items[0]);
+        return detectScalarType(parts.items[0].text);
     }
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(self.allocator);
     for (parts.items, 0..) |part, i| {
-        if (i > 0) result.append(self.allocator, ' ') catch return error.OutOfMemory;
-        result.appendSlice(self.allocator, part) catch return error.OutOfMemory;
+        if (i > 0) {
+            if (part.blank_before) {
+                result.append(self.allocator, '\n') catch return error.OutOfMemory;
+            } else {
+                result.append(self.allocator, ' ') catch return error.OutOfMemory;
+            }
+        }
+        result.appendSlice(self.allocator, part.text) catch return error.OutOfMemory;
     }
     return .{ .string = result.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
@@ -1005,6 +1160,7 @@ fn parseDoubleQuoted(self: *Parser) root.Error![]const u8 {
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(self.allocator);
+    var trailing_literal_ws: usize = 0;
 
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
@@ -1013,6 +1169,7 @@ fn parseDoubleQuoted(self: *Parser) root.Error![]const u8 {
             return result.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
         }
         if (c == '\\') {
+            trailing_literal_ws = 0;
             self.pos += 1;
             if (self.pos >= self.input.len) return self.fail("InvalidEscapeSequence");
             const esc = self.input[self.pos];
@@ -1055,11 +1212,33 @@ fn parseDoubleQuoted(self: *Parser) root.Error![]const u8 {
                 else => return self.fail("InvalidEscapeSequence"),
             }
         } else if (c == '\n' or c == '\r') {
+            result.items.len -|= trailing_literal_ws;
+            trailing_literal_ws = 0;
             self.pos += 1;
             if (c == '\r' and self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
-            self.skipInlineSpace();
-            result.append(self.allocator, ' ') catch return error.OutOfMemory;
+            var blank_count: usize = 0;
+            while (self.pos < self.input.len) {
+                self.skipInlineSpace();
+                if (self.pos >= self.input.len) break;
+                if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') {
+                    blank_count += 1;
+                    if (self.input[self.pos] == '\r') self.pos += 1;
+                    if (self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+                } else break;
+            }
+            if (blank_count > 0) {
+                for (0..blank_count) |_| {
+                    result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                }
+            } else {
+                result.append(self.allocator, ' ') catch return error.OutOfMemory;
+            }
         } else {
+            if (c == ' ' or c == '\t') {
+                trailing_literal_ws += 1;
+            } else {
+                trailing_literal_ws = 0;
+            }
             result.append(self.allocator, c) catch return error.OutOfMemory;
             self.pos += 1;
         }
@@ -1074,11 +1253,13 @@ fn parseSingleQuoted(self: *Parser) root.Error![]const u8 {
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(self.allocator);
+    var trailing_literal_ws: usize = 0;
 
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
         if (c == '\'') {
             if (self.pos + 1 < self.input.len and self.input[self.pos + 1] == '\'') {
+                trailing_literal_ws = 0;
                 result.append(self.allocator, '\'') catch return error.OutOfMemory;
                 self.pos += 2;
             } else {
@@ -1086,11 +1267,33 @@ fn parseSingleQuoted(self: *Parser) root.Error![]const u8 {
                 return result.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
             }
         } else if (c == '\n' or c == '\r') {
+            result.items.len -|= trailing_literal_ws;
+            trailing_literal_ws = 0;
             self.pos += 1;
             if (c == '\r' and self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
-            self.skipInlineSpace();
-            result.append(self.allocator, ' ') catch return error.OutOfMemory;
+            var blank_count: usize = 0;
+            while (self.pos < self.input.len) {
+                self.skipInlineSpace();
+                if (self.pos >= self.input.len) break;
+                if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') {
+                    blank_count += 1;
+                    if (self.input[self.pos] == '\r') self.pos += 1;
+                    if (self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+                } else break;
+            }
+            if (blank_count > 0) {
+                for (0..blank_count) |_| {
+                    result.append(self.allocator, '\n') catch return error.OutOfMemory;
+                }
+            } else {
+                result.append(self.allocator, ' ') catch return error.OutOfMemory;
+            }
         } else {
+            if (c == ' ' or c == '\t') {
+                trailing_literal_ws += 1;
+            } else {
+                trailing_literal_ws = 0;
+            }
             result.append(self.allocator, c) catch return error.OutOfMemory;
             self.pos += 1;
         }
@@ -1120,7 +1323,7 @@ fn parseAnchorDef(self: *Parser) root.Error![]const u8 {
     const start = self.pos;
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
-        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == ':' or
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or
             c == ',' or c == ']' or c == '}' or c == '{' or c == '[')
         {
             break;
@@ -1137,8 +1340,8 @@ fn parseAlias(self: *Parser) root.Error!Value {
     const start = self.pos;
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
-        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == ':' or
-            c == ',' or c == ']' or c == '}')
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or
+            c == ',' or c == ']' or c == '}' or c == '{' or c == '[')
         {
             break;
         }
@@ -1153,8 +1356,29 @@ fn parseAlias(self: *Parser) root.Error!Value {
 
 fn parseTag(self: *Parser) root.Error![]const u8 {
     if (self.atEnd() or self.peek() != '!') return self.fail("InvalidTag");
-    const start = self.pos;
     self.pos += 1;
+    if (self.pos < self.input.len and self.input[self.pos] == '<') {
+        self.pos += 1;
+        const uri_start = self.pos;
+        while (self.pos < self.input.len and self.input[self.pos] != '>') self.pos += 1;
+        const uri = self.input[uri_start..self.pos];
+        if (self.pos < self.input.len) self.pos += 1;
+        const yaml_ns = "tag:yaml.org,2002:";
+        if (std.mem.startsWith(u8, uri, yaml_ns)) {
+            const suffix = uri[yaml_ns.len..];
+            if (std.mem.eql(u8, suffix, "str")) return "!!str";
+            if (std.mem.eql(u8, suffix, "int")) return "!!int";
+            if (std.mem.eql(u8, suffix, "float")) return "!!float";
+            if (std.mem.eql(u8, suffix, "bool")) return "!!bool";
+            if (std.mem.eql(u8, suffix, "null")) return "!!null";
+            if (std.mem.eql(u8, suffix, "map")) return "!!map";
+            if (std.mem.eql(u8, suffix, "seq")) return "!!seq";
+            if (std.mem.eql(u8, suffix, "set")) return "!!set";
+            if (std.mem.eql(u8, suffix, "binary")) return "!!binary";
+        }
+        return uri;
+    }
+    const start = self.pos - 1;
     if (self.pos < self.input.len and self.input[self.pos] == '!') self.pos += 1;
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
@@ -1184,6 +1408,29 @@ fn atEnd(self: *const Parser) bool {
 fn atEndOfLine(self: *const Parser) bool {
     if (self.pos >= self.input.len) return true;
     return self.input[self.pos] == '\n' or self.input[self.pos] == '\r';
+}
+
+fn isFlowIndicatorNext(self: *const Parser) bool {
+    if (self.pos + 1 >= self.input.len) return true;
+    const next = self.input[self.pos + 1];
+    return next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
+        next == '{' or next == '}' or next == '\n' or next == '\r';
+}
+
+fn isDocumentMarker(self: *const Parser) bool {
+    if (self.pos + 3 > self.input.len) return false;
+    const triple = self.input[self.pos..][0..3];
+    if (!std.mem.eql(u8, triple, "---") and !std.mem.eql(u8, triple, "...")) return false;
+    if (self.pos + 3 == self.input.len) return true;
+    const after = self.input[self.pos + 3];
+    return after == ' ' or after == '\t' or after == '\n' or after == '\r';
+}
+
+fn isBlockSequenceIndicator(self: *const Parser) bool {
+    if (self.pos >= self.input.len or self.input[self.pos] != '-') return false;
+    if (self.pos + 1 >= self.input.len) return true;
+    const next = self.input[self.pos + 1];
+    return next == ' ' or next == '\t' or next == '\n' or next == '\r';
 }
 
 fn currentCol(self: *const Parser) usize {
@@ -1291,14 +1538,14 @@ fn findKeyValueSep(line: []const u8) ?usize {
     var i: usize = 0;
     while (i < line.len) {
         const c = line[i];
-        if (c == '"') {
+        if (c == '"' and i == 0) {
             i += 1;
             while (i < line.len and line[i] != '"') {
                 if (line[i] == '\\') i += 1;
                 i += 1;
             }
             if (i < line.len) i += 1;
-        } else if (c == '\'') {
+        } else if (c == '\'' and i == 0) {
             i += 1;
             while (i < line.len) {
                 if (line[i] == '\'') {
@@ -1308,10 +1555,12 @@ fn findKeyValueSep(line: []const u8) ?usize {
                 } else i += 1;
             }
             if (i < line.len) i += 1;
-        } else if (c == '#' and i > 0 and line[i - 1] == ' ') {
+        } else if (c == '#' and i > 0 and (line[i - 1] == ' ' or line[i - 1] == '\t')) {
             break;
         } else if (c == ':') {
-            if (i + 1 >= line.len or line[i + 1] == ' ' or line[i + 1] == '\n' or line[i + 1] == '\r') {
+            if (i + 1 >= line.len or line[i + 1] == ' ' or line[i + 1] == '\t' or
+                line[i + 1] == '\n' or line[i + 1] == '\r')
+            {
                 return i;
             }
             i += 1;
