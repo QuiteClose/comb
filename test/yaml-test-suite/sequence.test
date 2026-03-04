@@ -1,0 +1,115 @@
+<!-- test: Block Sequence in Block Sequence [3ALJ] -->
+<!-- in -->
+- - s1_i1
+  - s1_i2
+- s2
+<!-- json -->
+[
+  [
+    "s1_i1",
+    "s1_i2"
+  ],
+  "s2"
+]
+
+<!-- test: Wrong indendation in Sequence [4HVU] -->
+<!-- error -->
+<!-- in -->
+key:
+   - ok
+   - also ok
+  - wrong
+
+<!-- test: Single Entry Block Sequence [65WH] -->
+<!-- in -->
+- foo
+<!-- json -->
+[
+  "foo"
+]
+
+<!-- test: Spec Example 6.3. Separation Spaces [6BCT] -->
+<!-- in -->
+- foo:	 bar
+- - baz
+  -	baz
+<!-- json -->
+[
+  {
+    "foo": "bar"
+  },
+  [
+    "baz",
+    "baz"
+  ]
+]
+
+<!-- test: Spec Example 2.1. Sequence of Scalars [FQ7F] -->
+<!-- in -->
+- Mark McGwire
+- Sammy Sosa
+- Ken Griffey
+<!-- json -->
+[
+  "Mark McGwire",
+  "Sammy Sosa",
+  "Ken Griffey"
+]
+
+<!-- test: Multiple Entry Block Sequence [K4SU] -->
+<!-- in -->
+- foo
+- bar
+- 42
+<!-- json -->
+[
+  "foo",
+  "bar",
+  42
+]
+
+<!-- test: Sequence Indent [RLU9] -->
+<!-- in -->
+foo:
+- 42
+bar:
+  - 44
+<!-- json -->
+{
+  "foo": [
+    42
+  ],
+  "bar": [
+    44
+  ]
+}
+
+<!-- test: Spec Example 2.5. Sequence of Sequences [YD5X] -->
+<!-- in -->
+- [name        , hr, avg  ]
+- [Mark McGwire, 65, 0.278]
+- [Sammy Sosa  , 63, 0.288]
+<!-- json -->
+[
+  [
+    "name",
+    "hr",
+    "avg"
+  ],
+  [
+    "Mark McGwire",
+    65,
+    0.278
+  ],
+  [
+    "Sammy Sosa",
+    63,
+    0.288
+  ]
+]
+
+<!-- test: Wrong indented sequence item [ZVH3] -->
+<!-- error -->
+<!-- in -->
+- key: value
+ - item1

@@ -1,0 +1,872 @@
+<!-- test: Literal modifers [2G84/00] -->
+<!-- error -->
+<!-- in -->
+--- |0
+
+<!-- test: Literal modifers [2G84/01] -->
+<!-- error -->
+<!-- in -->
+--- |10
+
+<!-- test: Literal modifers [2G84/02] -->
+<!-- in -->
+--- |1-
+<!-- json -->
+""
+
+<!-- test: Literal modifers [2G84/03] -->
+<!-- in -->
+--- |1+
+<!-- json -->
+""
+
+<!-- test: Folded Block Scalar [1.3] [4Q9F] -->
+<!-- in -->
+--- >
+ ab
+ cd
+ 
+ ef
+
+
+ gh
+<!-- json -->
+"ab cd\nef\n\ngh\n"
+
+<!-- test: Spec Example 8.2. Block Indentation Indicator [1.3] [4QFQ] -->
+<!-- in -->
+- |
+ detected
+- >
+ 
+  
+  # detected
+- |1
+  explicit
+- >
+ detected
+<!-- json -->
+[
+  "detected\n",
+  "\n\n# detected\n",
+  " explicit\n",
+  "detected\n"
+]
+
+<!-- test: Literal scalars [4WA9] -->
+<!-- in -->
+- aaa: |2
+    xxx
+  bbb: |
+    xxx
+<!-- json -->
+[
+  {
+    "aaa" : "xxx\n",
+    "bbb" : "xxx\n"
+  }
+]
+
+<!-- test: Spec Example 6.4. Line Prefixes [4ZYM] -->
+<!-- in -->
+plain: text
+  lines
+quoted: "text
+  	lines"
+block: |
+  text
+   	lines
+<!-- json -->
+{
+  "plain": "text lines",
+  "quoted": "text lines",
+  "block": "text\n \tlines\n"
+}
+
+<!-- test: Spec Example 5.7. Block Scalar Indicators [5BVJ] -->
+<!-- in -->
+literal: |
+  some
+  text
+folded: >
+  some
+  text
+<!-- json -->
+{
+  "literal": "some\ntext\n",
+  "folded": "some text\n"
+}
+
+<!-- test: Spec Example 6.5. Empty Lines [5GBF] -->
+<!-- in -->
+Folding:
+  "Empty line
+   	
+  as a line feed"
+Chomping: |
+  Clipped empty lines
+ 
+
+<!-- json -->
+{
+  "Folding": "Empty line\nas a line feed",
+  "Chomping": "Clipped empty lines\n"
+}
+
+<!-- test: Block scalar with wrong indented line after spaces only [5LLU] -->
+<!-- error -->
+<!-- in -->
+block scalar: >
+ 
+  
+   
+ invalid
+
+<!-- test: Spec Example 8.17. Explicit Block Mapping Entries [5WE3] -->
+<!-- in -->
+? explicit key # Empty value
+? |
+  block key
+: - one # Explicit compact
+  - two # block value
+<!-- json -->
+{
+  "explicit key": null,
+  "block key\n": [
+    "one",
+    "two"
+  ]
+}
+
+<!-- test: Block Scalar Keep [6FWR] -->
+<!-- in -->
+--- |+
+ ab
+ 
+  
+...
+<!-- json -->
+"ab\n\n \n"
+
+<!-- test: Spec Example 2.13. In literals, newlines are preserved [6JQW] -->
+<!-- in -->
+# ASCII Art
+--- |
+  \//||\/||
+  // ||  ||__
+<!-- json -->
+"\\//||\\/||\n// ||  ||__\n"
+
+<!-- test: Spec Example 2.15. Folded newlines are preserved for "more indented" and blank lines [6VJK] -->
+<!-- in -->
+>
+ Sammy Sosa completed another
+ fine season with great stats.
+
+   63 Home Runs
+   0.288 Batting Average
+
+ What a year!
+<!-- json -->
+"Sammy Sosa completed another fine season with great stats.\n\n  63 Home Runs\n  0.288 Batting Average\n\nWhat a year!\n"
+
+<!-- test: Spec Example 8.20. Block Node Types [735Y] -->
+<!-- in -->
+-
+  "flow in block"
+- >
+ Block scalar
+- !!map # Block collection
+  foo : bar
+<!-- json -->
+[
+  "flow in block",
+  "Block scalar\n",
+  {
+    "foo": "bar"
+  }
+]
+
+<!-- test: Block Scalar Strip [1.3] [753E] -->
+<!-- in -->
+--- |-
+ ab
+ 
+ 
+...
+<!-- json -->
+"ab"
+
+<!-- test: Spec Example 8.10. Folded Lines - 8.13. Final Empty Lines [7T8X] -->
+<!-- in -->
+>
+
+ folded
+ line
+
+ next
+ line
+   * bullet
+
+   * list
+   * lines
+
+ last
+ line
+
+# Comment
+<!-- json -->
+"\nfolded line\nnext line\n  * bullet\n\n  * list\n  * lines\n\nlast line\n"
+
+<!-- test: Spec Example 6.6. Line Folding [1.3] [93WF] -->
+<!-- in -->
+--- >-
+  trimmed
+  
+ 
+
+  as
+  space
+<!-- json -->
+"trimmed\n\n\nas space"
+
+<!-- test: Spec Example 2.14. In the folded scalars, newlines become spaces [96L6] -->
+<!-- in -->
+--- >
+  Mark McGwire's
+  year was crippled
+  by a knee injury.
+<!-- json -->
+"Mark McGwire's year was crippled by a knee injury.\n"
+
+<!-- test: Leading tab content in literals [96NN/00] -->
+<!-- in -->
+foo: |-
+ 	bar
+<!-- json -->
+{"foo":"\tbar"}
+
+<!-- test: Leading tab content in literals [96NN/01] -->
+<!-- in -->
+foo: |-
+ 	bar
+<!-- json -->
+{"foo":"\tbar"}
+
+<!-- test: Spec Example 8.4. Chomping Final Line Break [A6F9] -->
+<!-- in -->
+strip: |-
+  text
+clip: |
+  text
+keep: |+
+  text
+<!-- json -->
+{
+  "strip": "text",
+  "clip": "text\n",
+  "keep": "text\n"
+}
+
+<!-- test: Spec Example 8.9. Folded Scalar [1.3] [B3HG] -->
+<!-- in -->
+--- >
+ folded
+ text
+
+
+<!-- json -->
+"folded text\n"
+
+<!-- test: Block scalar indicator order [D83L] -->
+<!-- in -->
+- |2-
+  explicit indent and chomp
+- |-2
+  chomp and explicit indent
+<!-- json -->
+[
+  "explicit indent and chomp",
+  "chomp and explicit indent"
+]
+
+<!-- test: Zero indented block scalar with line that looks like a comment [DK3J] -->
+<!-- in -->
+--- >
+line1
+# no comment
+line3
+<!-- json -->
+"line1 # no comment line3\n"
+
+<!-- test: Spec Example 8.8. Literal Content [DWX9] -->
+<!-- in -->
+|
+ 
+  
+  literal
+   
+  
+  text
+
+ # Comment
+<!-- json -->
+"\n\nliteral\n \n\ntext\n"
+
+<!-- test: More indented lines at the beginning of folded block scalars [F6MC] -->
+<!-- in -->
+---
+a: >2
+   more indented
+  regular
+b: >2
+
+
+   more indented
+  regular
+<!-- json -->
+{
+  "a": " more indented\nregular\n",
+  "b": "\n\n more indented\nregular\n"
+}
+
+<!-- test: Spec Example 8.5. Chomping Trailing Lines [F8F9] -->
+<!-- in -->
+ # Strip
+  # Comments:
+strip: |-
+  # text
+  
+ # Clip
+  # comments:
+
+clip: |
+  # text
+ 
+ # Keep
+  # comments:
+
+keep: |+
+  # text
+
+ # Trail
+  # comments.
+<!-- json -->
+{
+  "strip": "# text",
+  "clip": "# text\n",
+  "keep": "# text\n\n"
+}
+
+<!-- test: Zero indented block scalar [FP8R] -->
+<!-- in -->
+--- >
+line1
+line2
+line3
+<!-- json -->
+"line1 line2 line3\n"
+
+<!-- test: Spec Example 8.9. Folded Scalar [G992] -->
+<!-- in -->
+>
+ folded
+ text
+
+
+<!-- json -->
+"folded text\n"
+
+<!-- test: Blank lines [H2RW] -->
+<!-- in -->
+foo: 1
+
+bar: 2
+    
+text: |
+  a
+    
+  b
+
+  c
+ 
+  d
+<!-- json -->
+{
+  "foo": 1,
+  "bar": 2,
+  "text": "a\n  \nb\n\nc\n\nd\n"
+}
+
+<!-- test: Spec Example 2.16. Indentation determines scope [HMK4] -->
+<!-- in -->
+name: Mark McGwire
+accomplishment: >
+  Mark set a major league
+  home run record in 1998.
+stats: |
+  65 Home Runs
+  0.278 Batting Average
+<!-- json -->
+{
+  "name": "Mark McGwire",
+  "accomplishment": "Mark set a major league home run record in 1998.\n",
+  "stats": "65 Home Runs\n0.278 Batting Average\n"
+}
+
+<!-- test: Trailing whitespace in streams [JEF9/00] -->
+<!-- in -->
+- |+
+
+
+<!-- json -->
+[
+  "\n\n"
+]
+
+<!-- test: Trailing whitespace in streams [JEF9/01] -->
+<!-- in -->
+- |+
+   
+<!-- json -->
+[
+  "\n"
+]
+
+<!-- test: Trailing whitespace in streams [JEF9/02] -->
+<!-- in -->
+- |+
+   
+<!-- json -->
+[
+  "\n"
+]
+
+<!-- test: Spec Example 6.6. Line Folding [K527] -->
+<!-- in -->
+>-
+  trimmed
+  
+ 
+
+  as
+  space
+<!-- json -->
+"trimmed\n\n\nas space"
+
+<!-- test: Spec Example 8.6. Empty Scalar Chomping [K858] -->
+<!-- in -->
+strip: >-
+
+clip: >
+
+keep: |+
+
+<!-- json -->
+{
+  "strip": "",
+  "clip": "",
+  "keep": "\n"
+}
+
+<!-- test: Literal Block Scalar [M29M] -->
+<!-- in -->
+a: |
+ ab
+ 
+ cd
+ ef
+ 
+
+...
+<!-- json -->
+{
+  "a": "ab\n\ncd\nef\n"
+}
+
+<!-- test: Spec Example 8.21. Block Scalar Nodes [M5C3] -->
+<!-- in -->
+literal: |2
+  value
+folded:
+   !foo
+  >1
+ value
+<!-- json -->
+{
+  "literal": "value\n",
+  "folded": "value\n"
+}
+
+<!-- test: Spec Example 8.7. Literal Scalar [M9B4] -->
+<!-- in -->
+|
+ literal
+ 	text
+
+
+<!-- json -->
+"literal\n\ttext\n"
+
+<!-- test: Spec Example 6.7. Block Folding [MJS9] -->
+<!-- in -->
+>
+  foo 
+ 
+  	 bar
+
+  baz
+<!-- json -->
+"foo \n\n\t bar\n\nbaz\n"
+
+<!-- test: Block Scalar Strip [MYW6] -->
+<!-- in -->
+|-
+ ab
+ 
+ 
+...
+<!-- json -->
+"ab"
+
+<!-- test: Non-Specific Tags on Scalars [MZX3] -->
+<!-- in -->
+- plain
+- "double quoted"
+- 'single quoted'
+- >
+  block
+- plain again
+<!-- json -->
+[
+  "plain",
+  "double quoted",
+  "single quoted",
+  "block\n",
+  "plain again"
+]
+
+<!-- test: Spec Example 8.1. Block Scalar Header [P2AD] -->
+<!-- in -->
+- | # Empty header↓
+ literal
+- >1 # Indentation indicator↓
+  folded
+- |+ # Chomping indicator↓
+ keep
+
+- >1- # Both indicators↓
+  strip
+<!-- json -->
+[
+  "literal\n",
+  " folded\n",
+  "keep\n\n",
+  " strip"
+]
+
+<!-- test: Spec Example 8.2. Block Indentation Indicator [R4YG] -->
+<!-- in -->
+- |
+ detected
+- >
+ 
+  
+  # detected
+- |1
+  explicit
+- >
+ 	
+ detected
+<!-- json -->
+[
+  "detected\n",
+  "\n\n# detected\n",
+  " explicit\n",
+  "\t\ndetected\n"
+]
+
+<!-- test: Various Trailing Comments [1.3] [RZP5] -->
+<!-- in -->
+a: "double
+  quotes" # lala
+b: plain
+ value  # lala
+c  : #lala
+  d
+? # lala
+ - seq1
+: # lala
+ - #lala
+  seq2
+e: &node # lala
+ - x: y
+block: > # lala
+  abcde
+
+<!-- test: Spec Example 2.28. Log File [RZT7] -->
+<!-- in -->
+---
+Time: 2001-11-23 15:01:42 -5
+User: ed
+Warning:
+  This is an error message
+  for the log file
+---
+Time: 2001-11-23 15:02:31 -5
+User: ed
+Warning:
+  A slightly different error
+  message.
+---
+Date: 2001-11-23 15:03:17 -5
+User: ed
+Fatal:
+  Unknown variable "bar"
+Stack:
+  - file: TopClass.py
+    line: 23
+    code: |
+      x = MoreObject("345\n")
+  - file: MoreClass.py
+    line: 58
+    code: |-
+      foo = bar
+<!-- json -->
+{
+  "Time": "2001-11-23 15:01:42 -5",
+  "User": "ed",
+  "Warning": "This is an error message for the log file"
+}
+{
+  "Time": "2001-11-23 15:02:31 -5",
+  "User": "ed",
+  "Warning": "A slightly different error message."
+}
+{
+  "Date": "2001-11-23 15:03:17 -5",
+  "User": "ed",
+  "Fatal": "Unknown variable \"bar\"",
+  "Stack": [
+    {
+      "file": "TopClass.py",
+      "line": 23,
+      "code": "x = MoreObject(\"345\\n\")\n"
+    },
+    {
+      "file": "MoreClass.py",
+      "line": 58,
+      "code": "foo = bar"
+    }
+  ]
+}
+
+<!-- test: Invalid text after block scalar indicator [S4GJ] -->
+<!-- error -->
+<!-- in -->
+---
+folded: > first line
+  second line
+
+<!-- test: Block scalar with more spaces than first content line [S98Z] -->
+<!-- error -->
+<!-- in -->
+empty block scalar: >
+ 
+  
+   
+ # comment
+
+<!-- test: Spec Example 8.8. Literal Content [1.3] [T26H] -->
+<!-- in -->
+--- |
+ 
+  
+  literal
+   
+  
+  text
+
+ # Comment
+<!-- json -->
+"\n\nliteral\n \n\ntext\n"
+
+<!-- test: Spec Example 8.7. Literal Scalar [1.3] [T5N4] -->
+<!-- in -->
+--- |
+ literal
+ 	text
+
+
+<!-- json -->
+"literal\n\ttext\n"
+
+<!-- test: Folded Block Scalar [TS54] -->
+<!-- in -->
+>
+ ab
+ cd
+ 
+ ef
+
+
+ gh
+<!-- json -->
+"ab cd\nef\n\ngh\n"
+
+<!-- test: Spec Example 2.27. Invoice [UGM3] -->
+<!-- in -->
+--- !<tag:clarkevans.com,2002:invoice>
+invoice: 34843
+date   : 2001-01-23
+bill-to: &id001
+    given  : Chris
+    family : Dumars
+    address:
+        lines: |
+            458 Walkman Dr.
+            Suite #292
+        city    : Royal Oak
+        state   : MI
+        postal  : 48046
+ship-to: *id001
+product:
+    - sku         : BL394D
+      quantity    : 4
+      description : Basketball
+      price       : 450.00
+    - sku         : BL4438H
+      quantity    : 1
+      description : Super Hoop
+      price       : 2392.00
+tax  : 251.42
+total: 4443.52
+comments:
+    Late afternoon is best.
+    Backup contact is Nancy
+    Billsmer @ 338-4338.
+<!-- json -->
+{
+  "invoice": 34843,
+  "date": "2001-01-23",
+  "bill-to": {
+    "given": "Chris",
+    "family": "Dumars",
+    "address": {
+      "lines": "458 Walkman Dr.\nSuite #292\n",
+      "city": "Royal Oak",
+      "state": "MI",
+      "postal": 48046
+    }
+  },
+  "ship-to": {
+    "given": "Chris",
+    "family": "Dumars",
+    "address": {
+      "lines": "458 Walkman Dr.\nSuite #292\n",
+      "city": "Royal Oak",
+      "state": "MI",
+      "postal": 48046
+    }
+  },
+  "product": [
+    {
+      "sku": "BL394D",
+      "quantity": 4,
+      "description": "Basketball",
+      "price": 450
+    },
+    {
+      "sku": "BL4438H",
+      "quantity": 1,
+      "description": "Super Hoop",
+      "price": 2392
+    }
+  ],
+  "tax": 251.42,
+  "total": 4443.52,
+  "comments": "Late afternoon is best. Backup contact is Nancy Billsmer @ 338-4338."
+}
+
+<!-- test: Spec Example 8.15. Block Sequence Entry Types [W42U] -->
+<!-- in -->
+- # Empty
+- |
+ block node
+- - one # Compact
+  - two # sequence
+- one: two # Compact mapping
+<!-- json -->
+[
+  null,
+  "block node\n",
+  [
+    "one",
+    "two"
+  ],
+  {
+    "one": "two"
+  }
+]
+
+<!-- test: Literal block scalar with more spaces in first line [W9L4] -->
+<!-- error -->
+<!-- in -->
+---
+block scalar: |
+     
+  more spaces at the beginning
+  are invalid
+
+<!-- test: Comment without whitespace after block scalar indicator [X4QW] -->
+<!-- error -->
+<!-- in -->
+block: ># comment
+  scalar
+
+<!-- test: Spec Example 6.5. Empty Lines [1.3] [XV9V] -->
+<!-- in -->
+Folding:
+  "Empty line
+
+  as a line feed"
+Chomping: |
+  Clipped empty lines
+ 
+
+<!-- json -->
+{
+  "Folding": "Empty line\nas a line feed",
+  "Chomping": "Clipped empty lines\n"
+}
+
+<!-- test: Various Trailing Comments [XW4D] -->
+<!-- in -->
+a: "double
+  quotes" # lala
+b: plain
+ value  # lala
+c  : #lala
+  d
+? # lala
+ - seq1
+: # lala
+ - #lala
+  seq2
+e:
+ &node # lala
+ - x: y
+block: > # lala
+  abcde
+
+<!-- test: Spec Example 8.21. Block Scalar Nodes [1.3] [Z67P] -->
+<!-- in -->
+literal: |2
+  value
+folded: !foo >1
+ value
+<!-- json -->
+{
+  "literal": "value\n",
+  "folded": "value\n"
+}

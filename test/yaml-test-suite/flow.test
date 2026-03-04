@@ -1,0 +1,633 @@
+<!-- test: Flow Mapping Separate Values [4ABK] -->
+<!-- in -->
+{
+unquoted : "separate",
+http://foo.com,
+omitted value:,
+}
+
+<!-- test: Flow sequence with invalid extra closing bracket [4H7K] -->
+<!-- error -->
+<!-- in -->
+---
+[ a, b, c ] ]
+
+<!-- test: Flow mapping colon on line after key [4MUZ/00] -->
+<!-- in -->
+{"foo"
+: "bar"}
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Flow mapping colon on line after key [4MUZ/01] -->
+<!-- in -->
+{"foo"
+: bar}
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Flow mapping colon on line after key [4MUZ/02] -->
+<!-- in -->
+{foo
+: bar}
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Trailing spaces after flow collection [4RWC] -->
+<!-- in -->
+  [1, 2, 3]  
+  
+<!-- json -->
+[
+  1,
+  2,
+  3
+]
+
+<!-- test: Flow Mapping [54T7] -->
+<!-- in -->
+{foo: you, bar: far}
+<!-- json -->
+{
+  "foo": "you",
+  "bar": "far"
+}
+
+<!-- test: Flow mapping edge cases [58MP] -->
+<!-- in -->
+{x: :x}
+<!-- json -->
+{
+  "x": ":x"
+}
+
+<!-- test: Spec Example 7.15. Flow Mappings [5C5M] -->
+<!-- in -->
+- { one : two , three: four , }
+- {five: six,seven : eight}
+<!-- json -->
+[
+  {
+    "one": "two",
+    "three": "four"
+  },
+  {
+    "five": "six",
+    "seven": "eight"
+  }
+]
+
+<!-- test: Spec Example 7.13. Flow Sequence [5KJE] -->
+<!-- in -->
+- [ one, two, ]
+- [three ,four]
+<!-- json -->
+[
+  [
+    "one",
+    "two"
+  ],
+  [
+    "three",
+    "four"
+  ]
+]
+
+<!-- test: Invalid block mapping key on same line as previous key [62EZ] -->
+<!-- error -->
+<!-- in -->
+---
+x: { y: z }in: valid
+
+<!-- test: Question mark at start of flow key [652Z] -->
+<!-- in -->
+{ ?foo: bar,
+bar: 42
+}
+<!-- json -->
+{
+  "?foo" : "bar",
+  "bar" : 42
+}
+
+<!-- test: Spec Example 6.1. Indentation Spaces [6HB6] -->
+<!-- in -->
+  # Leading comment line spaces are
+   # neither content nor indentation.
+    
+Not indented:
+ By one space: |
+    By four
+      spaces
+ Flow style: [    # Leading spaces
+   By two,        # in flow style
+  Also by two,    # are neither
+  	Still by two   # content nor
+    ]             # indentation.
+<!-- json -->
+{
+  "Not indented": {
+    "By one space": "By four\n  spaces\n",
+    "Flow style": [
+      "By two",
+      "Also by two",
+      "Still by two"
+    ]
+  }
+}
+
+<!-- test: Flow sequence without closing bracket [6JTT] -->
+<!-- error -->
+<!-- in -->
+---
+[ [ a, b, c ]
+
+<!-- test: Comment in flow sequence before comma [7TMG] -->
+<!-- in -->
+---
+[ word1
+# comment
+, word2]
+<!-- json -->
+[
+  "word1",
+  "word2"
+]
+
+<!-- test: Empty flow collections [7ZZ5] -->
+<!-- in -->
+---
+nested sequences:
+- - - []
+- - - {}
+key1: []
+key2: {}
+<!-- json -->
+{
+  "nested sequences": [
+    [
+      [
+        []
+      ]
+    ],
+    [
+      [
+        {}
+      ]
+    ]
+  ],
+  "key1": [],
+  "key2": {}
+}
+
+<!-- test: Spec Example 7.8. Single Quoted Implicit Keys [87E4] -->
+<!-- in -->
+'implicit block key' : [
+  'implicit flow key' : value,
+ ]
+<!-- json -->
+{
+  "implicit block key": [
+    {
+      "implicit flow key": "value"
+    }
+  ]
+}
+
+<!-- test: Multiline plain flow mapping key without value [8KB6] -->
+<!-- in -->
+---
+- { single line, a: b}
+- { multi
+  line, a: b}
+<!-- json -->
+[
+  {
+    "single line": null,
+    "a": "b"
+  },
+  {
+    "multi line": null,
+    "a": "b"
+  }
+]
+
+<!-- test: Spec Example 7.14. Flow Sequence Entries [8UDB] -->
+<!-- in -->
+[
+"double
+ quoted", 'single
+           quoted',
+plain
+ text, [ nested ],
+single: pair,
+]
+<!-- json -->
+[
+  "double quoted",
+  "single quoted",
+  "plain text",
+  [
+    "nested"
+  ],
+  {
+    "single": "pair"
+  }
+]
+
+<!-- test: Wrong indented flow sequence [9C9N] -->
+<!-- error -->
+<!-- in -->
+---
+flow: [a,
+b,
+c]
+
+<!-- test: Invalid comment after end of flow sequence [9JBA] -->
+<!-- error -->
+<!-- in -->
+---
+[ a, b, c, ]#invalid
+
+<!-- test: Flow sequence with invalid comma at the beginning [9MAG] -->
+<!-- error -->
+<!-- in -->
+---
+[ , a, b, c ]
+
+<!-- test: Single Pair Implicit Entries [9MMW] -->
+<!-- in -->
+- [ YAML : separate ]
+- [ "JSON like":adjacent ]
+- [ {JSON: like}:adjacent ]
+
+<!-- test: Spec Example 7.18. Flow Mapping Adjacent Values [C2DT] -->
+<!-- in -->
+{
+"adjacent":value,
+"readable": value,
+"empty":
+}
+<!-- json -->
+{
+  "adjacent": "value",
+  "readable": "value",
+  "empty": null
+}
+
+<!-- test: Flow Mapping Key on two lines [C2SP] -->
+<!-- error -->
+<!-- in -->
+[23
+]: 42
+
+<!-- test: Missing comma in flow [CML9] -->
+<!-- error -->
+<!-- in -->
+key: [ word1
+#  xxx
+  word2 ]
+
+<!-- test: Flow sequence with invalid extra comma [CTN5] -->
+<!-- error -->
+<!-- in -->
+---
+[ a, b, c, , ]
+
+<!-- test: Invalid comment after comma [CVW2] -->
+<!-- error -->
+<!-- in -->
+---
+[ a, b, c,#invalid
+]
+
+<!-- test: Flow Sequence in Block Mapping [D88J] -->
+<!-- in -->
+a: [b, c]
+<!-- json -->
+{
+  "a": [
+    "b",
+    "c"
+  ]
+}
+
+<!-- test: Flow Sequence [DHP8] -->
+<!-- in -->
+[foo, bar, 42]
+<!-- json -->
+[
+  "foo",
+  "bar",
+  42
+]
+
+<!-- test: Implicit key followed by newline [DK4H] -->
+<!-- error -->
+<!-- in -->
+---
+[ key
+  : value ]
+
+<!-- test: Nested flow collections on one line [F3CP] -->
+<!-- in -->
+---
+{ a: [b, c, { d: [e, f] } ] }
+<!-- json -->
+{
+  "a": [
+    "b",
+    "c",
+    {
+      "d": [
+        "e",
+        "f"
+      ]
+    }
+  ]
+}
+
+<!-- test: Flow Sequence in Flow Sequence [FUP4] -->
+<!-- in -->
+[a, [b, c]]
+<!-- json -->
+[
+  "a",
+  [
+    "b",
+    "c"
+  ]
+]
+
+<!-- test: Plain dashes in flow sequence [G5U8] -->
+<!-- error -->
+<!-- in -->
+---
+- [-, -]
+
+<!-- test: Colon and adjacent value after comment on next line [K3WX] -->
+<!-- in -->
+---
+{ "foo" # comment
+  :bar }
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Invalid item after end of flow sequence [KS4U] -->
+<!-- error -->
+<!-- in -->
+---
+[
+sequence item
+]
+invalid item
+
+<!-- test: Spec Example 7.11. Plain Implicit Keys [L9U5] -->
+<!-- in -->
+implicit block key : [
+  implicit flow key : value,
+ ]
+<!-- json -->
+{
+  "implicit block key": [
+    {
+      "implicit flow key": "value"
+    }
+  ]
+}
+
+<!-- test: Nested flow collections [M7NX] -->
+<!-- in -->
+---
+{
+ a: [
+  b, c, {
+   d: [e, f]
+  }
+ ]
+}
+<!-- json -->
+{
+  "a": [
+    "b",
+    "c",
+    {
+      "d": [
+        "e",
+        "f"
+      ]
+    }
+  ]
+}
+
+<!-- test: Flow Mapping in Block Sequence [MXS3] -->
+<!-- in -->
+- {a: b}
+<!-- json -->
+[
+  {
+    "a": "b"
+  }
+]
+
+<!-- test: Invalid document markers in flow style [N782] -->
+<!-- error -->
+<!-- in -->
+[
+--- ,
+...
+]
+
+<!-- test: Multiline plain flow mapping key [NJ66] -->
+<!-- in -->
+---
+- { single line: value}
+- { multi
+  line: value}
+<!-- json -->
+[
+  {
+    "single line": "value"
+  },
+  {
+    "multi line": "value"
+  }
+]
+
+<!-- test: Invalid sequene item on same line as previous item [P2EQ] -->
+<!-- error -->
+<!-- in -->
+---
+- { y: z }- invalid
+
+<!-- test: Tab at beginning of line followed by a flow mapping [Q5MG] -->
+<!-- in -->
+	{}
+<!-- json -->
+{}
+
+<!-- test: Spec Example 7.23. Flow Content [Q88A] -->
+<!-- in -->
+- [ a, b ]
+- { a: b }
+- "a"
+- 'b'
+- c
+<!-- json -->
+[
+  [
+    "a",
+    "b"
+  ],
+  {
+    "a": "b"
+  },
+  "a",
+  "b",
+  "c"
+]
+
+<!-- test: Spec Example 7.19. Single Pair Flow Mappings [QF4Y] -->
+<!-- in -->
+[
+foo: bar
+]
+<!-- json -->
+[
+  {
+    "foo": "bar"
+  }
+]
+
+<!-- test: Nested flow mapping sequence and mappings [R52L] -->
+<!-- in -->
+---
+{ top1: [item1, {key2: value2}, item3], top2: value2 }
+<!-- json -->
+{
+  "top1": [
+    "item1",
+    {
+      "key2": "value2"
+    },
+    "item3"
+  ],
+  "top2": "value2"
+}
+
+<!-- test: Flow mapping missing a separating comma [T833] -->
+<!-- error -->
+<!-- in -->
+---
+{
+ foo: 1
+ bar: 2 }
+
+<!-- test: Spec Example 5.4. Flow Collection Indicators [UDR7] -->
+<!-- in -->
+sequence: [ one, two, ]
+mapping: { sky: blue, sea: green }
+<!-- json -->
+{
+  "sequence": [
+    "one",
+    "two"
+  ],
+  "mapping": {
+    "sky": "blue",
+    "sea": "green"
+  }
+}
+
+<!-- test: Spec Example 9.4. Explicit Documents [UT92] -->
+<!-- in -->
+---
+{ matches
+% : 20 }
+...
+---
+# Empty
+...
+<!-- json -->
+{
+  "matches %": 20
+}
+null
+
+<!-- test: Flow collections over many lines [VJP3/00] -->
+<!-- error -->
+<!-- in -->
+k: {
+k
+:
+v
+}
+
+<!-- test: Flow collections over many lines [VJP3/01] -->
+<!-- in -->
+k: {
+ k
+ :
+ v
+ }
+<!-- json -->
+{
+  "k" : {
+    "k" : "v"
+  }
+}
+
+<!-- test: Dash in flow sequence [YJV2] -->
+<!-- error -->
+<!-- in -->
+[-]
+
+<!-- test: Spec Example 2.6. Mapping of Mappings [ZF4X] -->
+<!-- in -->
+Mark McGwire: {hr: 65, avg: 0.278}
+Sammy Sosa: {
+    hr: 63,
+    avg: 0.288
+  }
+<!-- json -->
+{
+  "Mark McGwire": {
+    "hr": 65,
+    "avg": 0.278
+  },
+  "Sammy Sosa": {
+    "hr": 63,
+    "avg": 0.288
+  }
+}
+
+<!-- test: Nested top level flow mapping [ZK9H] -->
+<!-- in -->
+{ key: [[[
+  value
+ ]]]
+}
+<!-- json -->
+{
+  "key": [
+    [
+      [
+        "value"
+      ]
+    ]
+  ]
+}
+
+<!-- test: Implicit key followed by newline and adjacent value [ZXT5] -->
+<!-- error -->
+<!-- in -->
+[ "key"
+  :value ]

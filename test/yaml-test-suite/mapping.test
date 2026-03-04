@@ -1,0 +1,381 @@
+<!-- test: Spec Example 2.4. Sequence of Mappings [229Q] -->
+<!-- in -->
+-
+  name: Mark McGwire
+  hr:   65
+  avg:  0.278
+-
+  name: Sammy Sosa
+  hr:   63
+  avg:  0.288
+<!-- json -->
+[
+  {
+    "name": "Mark McGwire",
+    "hr": 65,
+    "avg": 0.278
+  },
+  {
+    "name": "Sammy Sosa",
+    "hr": 63,
+    "avg": 0.288
+  }
+]
+
+<!-- test: Invalid value after mapping [236B] -->
+<!-- error -->
+<!-- in -->
+foo:
+  bar
+invalid
+
+<!-- test: Invalid mapping in plain multiline [2CMS] -->
+<!-- error -->
+<!-- in -->
+this
+ is
+  invalid: x
+
+<!-- test: Invalid tabs as indendation in a mapping [4EJS] -->
+<!-- error -->
+<!-- in -->
+---
+a:
+	b:
+		c: value
+
+<!-- test: Spec Example 6.9. Separated Comment [5NYZ] -->
+<!-- in -->
+key:    # Comment
+  value
+<!-- json -->
+{
+  "key": "value"
+}
+
+<!-- test: Sequence on same Line as Mapping Key [5U3A] -->
+<!-- error -->
+<!-- in -->
+key: - a
+     - b
+
+<!-- test: Invalid scalar at the end of sequence [6S55] -->
+<!-- error -->
+<!-- in -->
+key:
+ - bar
+ - baz
+ invalid
+
+<!-- test: Missing colon [7MNF] -->
+<!-- error -->
+<!-- in -->
+top1:
+  key1: val1
+top2
+
+<!-- test: Block Sequence in Block Mapping [8QBE] -->
+<!-- in -->
+key:
+ - item1
+ - item2
+<!-- json -->
+{
+  "key": [
+    "item1",
+    "item2"
+  ]
+}
+
+<!-- test: Block Mappings in Block Sequence [93JH] -->
+<!-- in -->
+ - key: value
+   key2: value2
+ -
+   key3: value3
+<!-- json -->
+[
+  {
+    "key": "value",
+    "key2": "value2"
+  },
+  {
+    "key3": "value3"
+  }
+]
+
+<!-- test: Invalid scalar at the end of mapping [9CWY] -->
+<!-- error -->
+<!-- in -->
+key:
+ - item1
+ - item2
+invalid
+
+<!-- test: Multi-level Mapping Indent [9FMG] -->
+<!-- in -->
+a:
+  b:
+    c: d
+  e:
+    f: g
+h: i
+<!-- json -->
+{
+  "a": {
+    "b": {
+      "c": "d"
+    },
+    "e": {
+      "f": "g"
+    }
+  },
+  "h": "i"
+}
+
+<!-- test: Simple Mapping Indent [9J7A] -->
+<!-- in -->
+foo:
+  bar: baz
+<!-- json -->
+{
+  "foo": {
+    "bar": "baz"
+  }
+}
+
+<!-- test: Mapping starting at --- line [9KBC] -->
+<!-- error -->
+<!-- in -->
+--- key1: value1
+    key2: value2
+
+<!-- test: Spec Example 2.12. Compact Nested Mapping [9U5K] -->
+<!-- in -->
+---
+# Products purchased
+- item    : Super Hoop
+  quantity: 1
+- item    : Basketball
+  quantity: 4
+- item    : Big Shoes
+  quantity: 1
+<!-- json -->
+[
+  {
+    "item": "Super Hoop",
+    "quantity": 1
+  },
+  {
+    "item": "Basketball",
+    "quantity": 4
+  },
+  {
+    "item": "Big Shoes",
+    "quantity": 1
+  }
+]
+
+<!-- test: Sequence With Same Indentation as Parent Mapping [AZ63] -->
+<!-- in -->
+one:
+- 2
+- 3
+four: 5
+<!-- json -->
+{
+  "one": [
+    2,
+    3
+  ],
+  "four": 5
+}
+
+<!-- test: Lookahead test cases [AZW3] -->
+<!-- in -->
+- bla"keks: foo
+- bla]keks: foo
+<!-- json -->
+[
+  {
+    "bla\"keks": "foo"
+  },
+  {
+    "bla]keks": "foo"
+  }
+]
+
+<!-- test: Invalid mapping after sequence [BD7L] -->
+<!-- error -->
+<!-- in -->
+- item1
+- item2
+invalid: x
+
+<!-- test: Single Pair Block Mapping [D9TU] -->
+<!-- in -->
+foo: bar
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Wrong indendation in Map [DMG6] -->
+<!-- error -->
+<!-- in -->
+key:
+  ok: 1
+ wrong: 2
+
+<!-- test: Wrong indendation in mapping [EW3V] -->
+<!-- error -->
+<!-- in -->
+k1: v1
+ k2: v2
+
+<!-- test: Multiline implicit keys [G7JE] -->
+<!-- error -->
+<!-- in -->
+a\nb: 1
+c
+ d: 1
+
+<!-- test: Comment that looks like a mapping key [GDY7] -->
+<!-- error -->
+<!-- in -->
+key: value
+this is #not a: key
+
+<!-- test: Multiple Pair Block Mapping [J5UC] -->
+<!-- in -->
+foo: blue
+bar: arrr
+baz: jazz
+<!-- json -->
+{
+  "foo": "blue",
+  "bar": "arrr",
+  "baz": "jazz"
+}
+
+<!-- test: Empty Lines Between Mapping Elements [J7VC] -->
+<!-- in -->
+one: 2
+
+
+three: 4
+<!-- json -->
+{
+  "one": 2,
+  "three": 4
+}
+
+<!-- test: Spec Example 2.9. Single Document with Two Comments [J9HZ] -->
+<!-- in -->
+---
+hr: # 1998 hr ranking
+  - Mark McGwire
+  - Sammy Sosa
+rbi:
+  # 1998 rbi ranking
+  - Sammy Sosa
+  - Ken Griffey
+<!-- json -->
+{
+  "hr": [
+    "Mark McGwire",
+    "Sammy Sosa"
+  ],
+  "rbi": [
+    "Sammy Sosa",
+    "Ken Griffey"
+  ]
+}
+
+<!-- test: Spec Example 8.14. Block Sequence [JQ4R] -->
+<!-- in -->
+block sequence:
+  - one
+  - two : three
+<!-- json -->
+{
+  "block sequence": [
+    "one",
+    {
+      "two": "three"
+    }
+  ]
+}
+
+<!-- test: Block Submapping [KMK3] -->
+<!-- in -->
+foo:
+  bar: 1
+baz: 2
+<!-- json -->
+{
+  "foo": {
+    "bar": 1
+  },
+  "baz": 2
+}
+
+<!-- test: Spec Example 2.3. Mapping Scalars to Sequences [PBJ2] -->
+<!-- in -->
+american:
+  - Boston Red Sox
+  - Detroit Tigers
+  - New York Yankees
+national:
+  - New York Mets
+  - Chicago Cubs
+  - Atlanta Braves
+<!-- json -->
+{
+  "american": [
+    "Boston Red Sox",
+    "Detroit Tigers",
+    "New York Yankees"
+  ],
+  "national": [
+    "New York Mets",
+    "Chicago Cubs",
+    "Atlanta Braves"
+  ]
+}
+
+<!-- test: Document with footer [S4T7] -->
+<!-- in -->
+aaa: bbb
+...
+<!-- json -->
+{
+  "aaa": "bbb"
+}
+
+<!-- test: Single character streams [SM9W/00] -->
+<!-- in -->
+-
+<!-- json -->
+[null]
+
+<!-- test: Single character streams [SM9W/01] -->
+<!-- in -->
+:
+
+<!-- test: Spec Example 8.16. Block Mappings [TE2A] -->
+<!-- in -->
+block mapping:
+ key: value
+<!-- json -->
+{
+  "block mapping": {
+    "key": "value"
+  }
+}
+
+<!-- test: Invalid nested mapping [ZL4Z] -->
+<!-- error -->
+<!-- in -->
+---
+a: 'b': c

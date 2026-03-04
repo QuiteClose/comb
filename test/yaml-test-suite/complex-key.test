@@ -1,0 +1,335 @@
+<!-- test: Block Mapping with Missing Keys [2JQS] -->
+<!-- in -->
+: a
+: b
+
+<!-- test: Spec Example 2.25. Unordered Sets [2XXW] -->
+<!-- in -->
+# Sets are represented as a
+# Mapping where each key is
+# associated with a null value
+--- !!set
+? Mark McGwire
+? Sammy Sosa
+? Ken Griff
+<!-- json -->
+{
+  "Mark McGwire": null,
+  "Sammy Sosa": null,
+  "Ken Griff": null
+}
+
+<!-- test: Tags for Root Objects [35KP] -->
+<!-- in -->
+--- !!map
+? a
+: b
+--- !!seq
+- !!str c
+--- !!str
+d
+e
+<!-- json -->
+{
+  "a": "b"
+}
+[
+  "c"
+]
+"d e"
+
+<!-- test: Nested implicit complex keys [4FJ6] -->
+<!-- in -->
+---
+[
+  [ a, [ [[b,c]]: d, e]]: 23
+]
+
+<!-- test: Mapping, key and flow sequence item anchors [6BFJ] -->
+<!-- in -->
+---
+&mapping
+&key [ &item a, b, c ]: value
+
+<!-- test: Aliases in Explicit Block Mapping [6M2F] -->
+<!-- in -->
+? &a a
+: &b b
+: *a
+
+<!-- test: Zero-indented sequences in explicit mapping keys [6PBE] -->
+<!-- in -->
+---
+?
+- a
+- b
+:
+- c
+- d
+
+<!-- test: Block Mapping with Missing Values [7W2P] -->
+<!-- in -->
+? a
+? b
+c:
+<!-- json -->
+{
+  "a": null,
+  "b": null,
+  "c": null
+}
+
+<!-- test: Spec Example 6.2. Indentation Indicators [A2M4] -->
+<!-- in -->
+? a
+: -	b
+  -  -	c
+     - d
+<!-- json -->
+{
+  "a": [
+    "b",
+    [
+      "c",
+      "d"
+    ]
+  ]
+}
+
+<!-- test: Empty implicit key in single pair flow sequences [CFD4] -->
+<!-- in -->
+- [ : empty key ]
+- [: another empty key]
+
+<!-- test: Spec Example 7.20. Single Pair Explicit Entry [CT4Q] -->
+<!-- in -->
+[
+? foo
+ bar : baz
+]
+<!-- json -->
+[
+  {
+    "foo bar": "baz"
+  }
+]
+
+<!-- test: Spec Example 7.16. Flow Mapping Entries [DFF7] -->
+<!-- in -->
+{
+? explicit: entry,
+implicit: entry,
+?
+}
+
+<!-- test: Spec Example 7.3. Completely Empty Flow Nodes [FRK4] -->
+<!-- in -->
+{
+  ? foo :,
+  : bar,
+}
+
+<!-- test: Mixed Block Mapping (explicit to implicit) [GH63] -->
+<!-- in -->
+? a
+: 1.3
+fifteen: d
+<!-- json -->
+{
+  "a": 1.3,
+  "fifteen": "d"
+}
+
+<!-- test: Various combinations of explicit block mappings [KK5P] -->
+<!-- in -->
+complex1:
+  ? - a
+complex2:
+  ? - a
+  : b
+complex3:
+  ? - a
+  : >
+    b
+complex4:
+  ? >
+    a
+  :
+complex5:
+  ? - a
+  : - b
+
+<!-- test: Tags in Explicit Mapping [L94M] -->
+<!-- in -->
+? !!str a
+: !!int 47
+? c
+: !!str d
+<!-- json -->
+{
+  "a": 47,
+  "c": "d"
+}
+
+<!-- test: Implicit Flow Mapping Key on one line [LX3P] -->
+<!-- in -->
+[flow]: block
+
+<!-- test: Question mark edge cases [M2N8/00] -->
+<!-- in -->
+- ? : x
+
+<!-- test: Question mark edge cases [M2N8/01] -->
+<!-- in -->
+? []: x
+
+<!-- test: Spec Example 2.11. Mapping between Sequences [M5DY] -->
+<!-- in -->
+? - Detroit Tigers
+  - Chicago cubs
+:
+  - 2001-07-23
+
+? [ New York Yankees,
+    Atlanta Braves ]
+: [ 2001-07-02, 2001-08-12,
+    2001-08-14 ]
+
+<!-- test: Empty Lines at End of Document [NHX8] -->
+<!-- in -->
+:
+
+
+
+<!-- test: Empty keys in block and flow mapping [NKF9] -->
+<!-- in -->
+---
+key: value
+: empty key
+---
+{
+ key: value, : empty key
+}
+---
+# empty key and value
+:
+---
+# empty key and value
+{ : }
+
+<!-- test: Anchors on Empty Scalars [PW8X] -->
+<!-- in -->
+- &a
+- a
+-
+  &a : a
+  b: &b
+-
+  &c : &a
+-
+  ? &d
+-
+  ? &e
+  : &a
+
+<!-- test: Spec Example 6.12. Separation Spaces [Q9WF] -->
+<!-- in -->
+{ first: Sammy, last: Sosa }:
+# Statistics:
+  hr:  # Home runs
+     65
+  avg: # Average
+   0.278
+
+<!-- test: Mixed Block Mapping (implicit to explicit) [RR7F] -->
+<!-- in -->
+a: 4.2
+? d
+: 23
+<!-- json -->
+{
+  "d": 23,
+  "a": 4.2
+}
+
+<!-- test: Spec Example 8.18. Implicit Block Mapping Entries [S3PD] -->
+<!-- in -->
+plain key: in-line value
+: # Both empty
+"quoted key":
+- entry
+
+<!-- test: Spec Example 5.3. Block Structure Indicators [S9E8] -->
+<!-- in -->
+sequence:
+- one
+- two
+mapping:
+  ? sky
+  : blue
+  sea : green
+<!-- json -->
+{
+  "sequence": [
+    "one",
+    "two"
+  ],
+  "mapping": {
+    "sky": "blue",
+    "sea": "green"
+  }
+}
+
+<!-- test: Flow Sequence in Flow Mapping [SBG9] -->
+<!-- in -->
+{a: [b, c], [d, e]: f}
+
+<!-- test: Syntax character edge cases [UKK6/00] -->
+<!-- in -->
+- :
+
+<!-- test: Syntax character edge cases [UKK6/01] -->
+<!-- in -->
+::
+<!-- json -->
+{
+  ":": null
+}
+
+<!-- test: Syntax character edge cases [UKK6/02] -->
+<!-- in -->
+!
+
+<!-- test: Spec Example 8.19. Compact Block Mappings [V9D5] -->
+<!-- in -->
+- sun: yellow
+- ? earth: blue
+  : moon: white
+
+<!-- test: Aliases in Flow Objects [X38W] -->
+<!-- in -->
+{ &a [a, &b b]: *b, *a : [c, *b, d]}
+
+<!-- test: Explicit key and value seperated by comment [X8DW] -->
+<!-- in -->
+---
+? key
+# comment
+: value
+<!-- json -->
+{
+  "key": "value"
+}
+
+<!-- test: Key with anchor after missing explicit mapping value [ZWK4] -->
+<!-- in -->
+---
+a: 1
+? b
+&anchor c: 3
+<!-- json -->
+{
+  "a": 1,
+  "b": null,
+  "c": 3
+}

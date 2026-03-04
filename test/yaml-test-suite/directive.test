@@ -1,0 +1,105 @@
+<!-- test: Spec Example 5.9. Directive Indicator [27NA] -->
+<!-- in -->
+%YAML 1.2
+--- text
+<!-- json -->
+"text"
+
+<!-- test: Directive by itself with no document [9MMA] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.2
+
+<!-- test: Directive without document [B63P] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.2
+...
+
+<!-- test: Spec Example 6.14. “YAML” directive [BEC7] -->
+<!-- in -->
+%YAML 1.3 # Attempt parsing
+          # with a warning
+---
+"foo"
+<!-- json -->
+"foo"
+
+<!-- test: Missing document-end marker before directive [EB22] -->
+<!-- error -->
+<!-- in -->
+---
+scalar1 # comment
+%YAML 1.2
+---
+scalar2
+
+<!-- test: Extra words on %YAML directive [H7TQ] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.2 foo
+---
+
+<!-- test: Directive variants [MUS6/00] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.1#...
+---
+
+<!-- test: Directive variants [MUS6/01] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.2
+---
+%YAML 1.2
+---
+
+<!-- test: Directive variants [MUS6/02] -->
+<!-- in -->
+%YAML  1.1
+---
+<!-- json -->
+null
+
+<!-- test: Directive variants [MUS6/03] -->
+<!-- in -->
+%YAML 	 1.1
+---
+<!-- json -->
+null
+
+<!-- test: Directive variants [MUS6/04] -->
+<!-- in -->
+%YAML 1.1  # comment
+---
+<!-- json -->
+null
+
+<!-- test: Directive variants [MUS6/05] -->
+<!-- in -->
+%YAM 1.1
+---
+<!-- json -->
+null
+
+<!-- test: Directive variants [MUS6/06] -->
+<!-- in -->
+%YAMLL 1.1
+---
+<!-- json -->
+null
+
+<!-- test: YAML directive without document end marker [RHX7] -->
+<!-- error -->
+<!-- in -->
+---
+key: value
+%YAML 1.2
+---
+
+<!-- test: Duplicate YAML directive [SF5V] -->
+<!-- error -->
+<!-- in -->
+%YAML 1.2
+%YAML 1.2
+---

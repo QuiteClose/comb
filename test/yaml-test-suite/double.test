@@ -1,0 +1,422 @@
+<!-- test: Spec Example 6.13. Reserved Directives [1.3] [2LFX] -->
+<!-- in -->
+%FOO  bar baz # Should be ignored
+              # with a warning.
+---
+"foo"
+<!-- json -->
+"foo"
+
+<!-- test: Leading tabs in double quoted [3RLN/00] -->
+<!-- in -->
+"1 leading
+    \ttab"
+<!-- json -->
+"1 leading \ttab"
+
+<!-- test: Leading tabs in double quoted [3RLN/01] -->
+<!-- in -->
+"2 leading
+    \	tab"
+<!-- json -->
+"2 leading \ttab"
+
+<!-- test: Leading tabs in double quoted [3RLN/02] -->
+<!-- in -->
+"3 leading
+    	tab"
+<!-- json -->
+"3 leading tab"
+
+<!-- test: Leading tabs in double quoted [3RLN/03] -->
+<!-- in -->
+"4 leading
+    \t  tab"
+<!-- json -->
+"4 leading \t  tab"
+
+<!-- test: Leading tabs in double quoted [3RLN/04] -->
+<!-- in -->
+"5 leading
+    \	  tab"
+<!-- json -->
+"5 leading \t  tab"
+
+<!-- test: Leading tabs in double quoted [3RLN/05] -->
+<!-- in -->
+"6 leading
+    	  tab"
+<!-- json -->
+"6 leading tab"
+
+<!-- test: Escaped slash in double quotes [3UYS] -->
+<!-- in -->
+escaped slash: "a\/b"
+<!-- json -->
+{
+  "escaped slash": "a/b"
+}
+
+<!-- test: Invalid escape in double quoted string [55WF] -->
+<!-- error -->
+<!-- in -->
+---
+"\."
+
+<!-- test: Colon and adjacent value on next line [5MUD] -->
+<!-- in -->
+---
+{ "foo"
+  :bar }
+<!-- json -->
+{
+  "foo": "bar"
+}
+
+<!-- test: Invalid document-start marker in doublequoted tring [5TRB] -->
+<!-- error -->
+<!-- in -->
+---
+"
+---
+"
+
+<!-- test: Backslashes in singlequotes [6H3V] -->
+<!-- in -->
+'foo: bar\': baz'
+<!-- json -->
+{
+  "foo: bar\\": "baz'"
+}
+
+<!-- test: Spec Example 6.13. Reserved Directives [6LVF] -->
+<!-- in -->
+%FOO  bar baz # Should be ignored
+              # with a warning.
+--- "foo"
+<!-- json -->
+"foo"
+
+<!-- test: Allowed characters in quoted mapping key [6SLA] -->
+<!-- in -->
+"foo\nbar:baz\tx \\$%^&*()x": 23
+'x\ny:z\tx $%^&*()x': 24
+<!-- json -->
+{
+  "foo\nbar:baz\tx \\$%^&*()x": 23,
+  "x\\ny:z\\tx $%^&*()x": 24
+}
+
+<!-- test: Spec Example 6.8. Flow Folding [1.3] [6WPF] -->
+<!-- in -->
+---
+"
+  foo 
+ 
+    bar
+
+  baz
+"
+<!-- json -->
+" foo\nbar\nbaz "
+
+<!-- test: Multiline double quoted implicit keys [7LBH] -->
+<!-- error -->
+<!-- in -->
+"a\nb": 1
+"c
+ d": 1
+
+<!-- test: Multiline doublequoted flow mapping key without value [9BXH] -->
+<!-- in -->
+---
+- { "single line", a: b}
+- { "multi
+  line", a: b}
+<!-- json -->
+[
+  {
+    "single line": null,
+    "a": "b"
+  },
+  {
+    "multi line": null,
+    "a": "b"
+  }
+]
+
+<!-- test: Scalar doc with '...' in content [9MQT/00] -->
+<!-- in -->
+--- "a
+...x
+b"
+<!-- json -->
+"a ...x b"
+
+<!-- test: Scalar doc with '...' in content [9MQT/01] -->
+<!-- error -->
+<!-- in -->
+--- "a
+... x
+b"
+<!-- json -->
+"a ...x b"
+
+<!-- test: Multiline double quoted flow mapping key [9SA2] -->
+<!-- in -->
+---
+- { "single line": value}
+- { "multi
+  line": value}
+<!-- json -->
+[
+  {
+    "single line": "value"
+  },
+  {
+    "multi line": "value"
+  }
+]
+
+<!-- test: Spec Example 7.6. Double Quoted Lines [1.3] [9TFX] -->
+<!-- in -->
+---
+" 1st non-empty
+
+ 2nd non-empty 
+ 3rd non-empty "
+<!-- json -->
+" 1st non-empty\n2nd non-empty 3rd non-empty "
+
+<!-- test: Doublequoted scalar starting with a tab [CPZ3] -->
+<!-- in -->
+---
+tab: "\tstring"
+<!-- json -->
+{
+  "tab": "\tstring"
+}
+
+<!-- test: Double quoted string without closing quote [CQ3W] -->
+<!-- error -->
+<!-- in -->
+---
+key: "missing closing quote
+
+<!-- test: Multiline single quoted implicit keys [D49Q] -->
+<!-- error -->
+<!-- in -->
+'a\nb': 1
+'c
+ d': 1
+
+<!-- test: Trailing tabs in double quoted [DE56/00] -->
+<!-- in -->
+"1 trailing\t
+    tab"
+<!-- json -->
+"1 trailing\t tab"
+
+<!-- test: Trailing tabs in double quoted [DE56/01] -->
+<!-- in -->
+"2 trailing\t  
+    tab"
+<!-- json -->
+"2 trailing\t tab"
+
+<!-- test: Trailing tabs in double quoted [DE56/02] -->
+<!-- in -->
+"3 trailing\	
+    tab"
+<!-- json -->
+"3 trailing\t tab"
+
+<!-- test: Trailing tabs in double quoted [DE56/03] -->
+<!-- in -->
+"4 trailing\	  
+    tab"
+<!-- json -->
+"4 trailing\t tab"
+
+<!-- test: Trailing tabs in double quoted [DE56/04] -->
+<!-- in -->
+"5 trailing	
+    tab"
+<!-- json -->
+"5 trailing tab"
+
+<!-- test: Trailing tabs in double quoted [DE56/05] -->
+<!-- in -->
+"6 trailing	  
+    tab"
+<!-- json -->
+"6 trailing tab"
+
+<!-- test: Double quoted scalar with escaped single quote [HRE5] -->
+<!-- error -->
+<!-- in -->
+---
+double: "quoted \' scalar"
+
+<!-- test: Trailing content that looks like a mapping [JY7Z] -->
+<!-- error -->
+<!-- in -->
+key1: "quoted1"
+key2: "quoted2" no key: nor value
+key3: "quoted3"
+
+<!-- test: Inline tabs in double quoted [KH5V/00] -->
+<!-- in -->
+"1 inline\ttab"
+<!-- json -->
+"1 inline\ttab"
+
+<!-- test: Inline tabs in double quoted [KH5V/01] -->
+<!-- in -->
+"2 inline\	tab"
+<!-- json -->
+"2 inline\ttab"
+
+<!-- test: Inline tabs in double quoted [KH5V/02] -->
+<!-- in -->
+"3 inline	tab"
+<!-- json -->
+"3 inline\ttab"
+
+<!-- test: Bad indentation in mapping [N4JP] -->
+<!-- error -->
+<!-- in -->
+map:
+  key1: "quoted1"
+ key2: "bad indentation"
+
+<!-- test: Various empty or newline only quoted strings [NAT4] -->
+<!-- in -->
+---
+a: '
+  '
+b: '  
+  '
+c: "
+  "
+d: "  
+  "
+e: '
+
+  '
+f: "
+
+  "
+g: '
+
+
+  '
+h: "
+
+
+  "
+<!-- json -->
+{
+  "a": " ",
+  "b": " ",
+  "c": " ",
+  "d": " ",
+  "e": "\n",
+  "f": "\n",
+  "g": "\n\n",
+  "h": "\n\n"
+}
+
+<!-- test: Spec Example 7.5. Double Quoted Line Breaks [NP9H] -->
+<!-- in -->
+"folded 
+to a space,	
+ 
+to a line feed, or 	\
+ \ 	non-content"
+<!-- json -->
+"folded to a space,\nto a line feed, or \t \tnon-content"
+
+<!-- test: Spec Example 7.9. Single Quoted Lines [PRH3] -->
+<!-- in -->
+' 1st non-empty
+
+ 2nd non-empty 
+	3rd non-empty '
+<!-- json -->
+" 1st non-empty\n2nd non-empty 3rd non-empty "
+
+<!-- test: Trailing content after quoted value [Q4CL] -->
+<!-- error -->
+<!-- in -->
+key1: "quoted1"
+key2: "quoted2" trailing content
+key3: "quoted3"
+
+<!-- test: Spec Example 7.5. Double Quoted Line Breaks [1.3] [Q8AD] -->
+<!-- in -->
+---
+"folded 
+to a space,
+ 
+to a line feed, or 	\
+ \ 	non-content"
+<!-- json -->
+"folded to a space,\nto a line feed, or \t \tnon-content"
+
+<!-- test: Wrong indented multiline quoted scalar [QB6E] -->
+<!-- error -->
+<!-- in -->
+---
+quoted: "a
+b
+c"
+
+<!-- test: Invalid document-end marker in single quoted string [RXY3] -->
+<!-- error -->
+<!-- in -->
+---
+'
+...
+'
+
+<!-- test: Spec Example 7.7. Single Quoted Characters [1.3] [SSW6] -->
+<!-- in -->
+---
+'here''s to "quotes"'
+<!-- json -->
+"here's to \"quotes\""
+
+<!-- test: Comment without whitespace after doublequoted scalar [SU5Z] -->
+<!-- error -->
+<!-- in -->
+key: "value"# invalid comment
+
+<!-- test: Spec Example 7.9. Single Quoted Lines [1.3] [T4YY] -->
+<!-- in -->
+---
+' 1st non-empty
+
+ 2nd non-empty 
+ 3rd non-empty '
+<!-- json -->
+" 1st non-empty\n2nd non-empty 3rd non-empty "
+
+<!-- test: Spec Example 6.8. Flow Folding [TL85] -->
+<!-- in -->
+"
+  foo 
+ 
+  	 bar
+
+  baz
+"
+<!-- json -->
+" foo\nbar\nbaz "
+
+<!-- test: Bad indentation in mapping (2) [U44R] -->
+<!-- error -->
+<!-- in -->
+map:
+  key1: "quoted1"
+   key2: "bad indentation"

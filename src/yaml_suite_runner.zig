@@ -1,103 +1,319 @@
 const std = @import("std");
+const mem = std.mem;
 const Allocator = std.mem.Allocator;
 const comb = @import("root.zig");
 
+const ExpectedFailure = struct {
+    id: []const u8,
+    reason: FailureReason,
+};
+
+const FailureReason = enum {
+    too_permissive,
+    parse_error,
+    json_mismatch,
+    multi_doc_json,
+};
+
+const expected_failures: []const ExpectedFailure = &.{
+    // Parser accepts invalid YAML that should be rejected (80 cases)
+    .{ .id = "2CMS", .reason = .too_permissive },
+    .{ .id = "3HFZ", .reason = .too_permissive },
+    .{ .id = "4EJS", .reason = .too_permissive },
+    .{ .id = "4H7K", .reason = .too_permissive },
+    .{ .id = "4HVU", .reason = .too_permissive },
+    .{ .id = "4JVG", .reason = .too_permissive },
+    .{ .id = "5LLU", .reason = .too_permissive },
+    .{ .id = "5TRB", .reason = .too_permissive },
+    .{ .id = "5U3A", .reason = .too_permissive },
+    .{ .id = "62EZ", .reason = .too_permissive },
+    .{ .id = "6S55", .reason = .too_permissive },
+    .{ .id = "7LBH", .reason = .too_permissive },
+    .{ .id = "8XDJ", .reason = .too_permissive },
+    .{ .id = "9C9N", .reason = .too_permissive },
+    .{ .id = "9HCY", .reason = .too_permissive },
+    .{ .id = "9JBA", .reason = .too_permissive },
+    .{ .id = "9KBC", .reason = .too_permissive },
+    .{ .id = "9MAG", .reason = .too_permissive },
+    .{ .id = "9MMA", .reason = .too_permissive },
+    .{ .id = "9MQT/01", .reason = .too_permissive },
+    .{ .id = "B63P", .reason = .too_permissive },
+    .{ .id = "BD7L", .reason = .too_permissive },
+    .{ .id = "BF9H", .reason = .too_permissive },
+    .{ .id = "BS4K", .reason = .too_permissive },
+    .{ .id = "C2SP", .reason = .too_permissive },
+    .{ .id = "CML9", .reason = .too_permissive },
+    .{ .id = "CTN5", .reason = .too_permissive },
+    .{ .id = "CVW2", .reason = .too_permissive },
+    .{ .id = "CXX2", .reason = .too_permissive },
+    .{ .id = "D49Q", .reason = .too_permissive },
+    .{ .id = "DK4H", .reason = .too_permissive },
+    .{ .id = "DK95/01", .reason = .too_permissive },
+    .{ .id = "DK95/06", .reason = .too_permissive },
+    .{ .id = "DMG6", .reason = .too_permissive },
+    .{ .id = "EB22", .reason = .too_permissive },
+    .{ .id = "EW3V", .reason = .too_permissive },
+    .{ .id = "G5U8", .reason = .too_permissive },
+    .{ .id = "GT5M", .reason = .too_permissive },
+    .{ .id = "H7TQ", .reason = .too_permissive },
+    .{ .id = "HU3P", .reason = .too_permissive },
+    .{ .id = "JKF3", .reason = .too_permissive },
+    .{ .id = "JY7Z", .reason = .too_permissive },
+    .{ .id = "KS4U", .reason = .too_permissive },
+    .{ .id = "LHL4", .reason = .too_permissive },
+    .{ .id = "MUS6/00", .reason = .too_permissive },
+    .{ .id = "MUS6/01", .reason = .too_permissive },
+    .{ .id = "N4JP", .reason = .too_permissive },
+    .{ .id = "N782", .reason = .too_permissive },
+    .{ .id = "P2EQ", .reason = .too_permissive },
+    .{ .id = "Q4CL", .reason = .too_permissive },
+    .{ .id = "QB6E", .reason = .too_permissive },
+    .{ .id = "QLJ7", .reason = .too_permissive },
+    .{ .id = "RXY3", .reason = .too_permissive },
+    .{ .id = "S4GJ", .reason = .too_permissive },
+    .{ .id = "S98Z", .reason = .too_permissive },
+    .{ .id = "SF5V", .reason = .too_permissive },
+    .{ .id = "SR86", .reason = .too_permissive },
+    .{ .id = "SU5Z", .reason = .too_permissive },
+    .{ .id = "SU74", .reason = .too_permissive },
+    .{ .id = "SY6V", .reason = .too_permissive },
+    .{ .id = "T833", .reason = .too_permissive },
+    .{ .id = "TD5N", .reason = .too_permissive },
+    .{ .id = "U44R", .reason = .too_permissive },
+    .{ .id = "U99R", .reason = .too_permissive },
+    .{ .id = "VJP3/00", .reason = .too_permissive },
+    .{ .id = "W9L4", .reason = .too_permissive },
+    .{ .id = "X4QW", .reason = .too_permissive },
+    .{ .id = "Y79Y/000", .reason = .too_permissive },
+    .{ .id = "Y79Y/003", .reason = .too_permissive },
+    .{ .id = "Y79Y/004", .reason = .too_permissive },
+    .{ .id = "Y79Y/005", .reason = .too_permissive },
+    .{ .id = "Y79Y/006", .reason = .too_permissive },
+    .{ .id = "Y79Y/007", .reason = .too_permissive },
+    .{ .id = "Y79Y/008", .reason = .too_permissive },
+    .{ .id = "Y79Y/009", .reason = .too_permissive },
+    .{ .id = "YJV2", .reason = .too_permissive },
+    .{ .id = "ZCZ6", .reason = .too_permissive },
+    .{ .id = "ZL4Z", .reason = .too_permissive },
+    .{ .id = "ZVH3", .reason = .too_permissive },
+    .{ .id = "ZXT5", .reason = .too_permissive },
+
+    // Parser rejects valid YAML (2 cases)
+    .{ .id = "P76L", .reason = .parse_error },
+    .{ .id = "X38W", .reason = .parse_error },
+
+    // Parser produces wrong JSON output (11 cases)
+    .{ .id = "565N", .reason = .json_mismatch },
+    .{ .id = "5WE3", .reason = .json_mismatch },
+    .{ .id = "82AN", .reason = .json_mismatch },
+    .{ .id = "8KB6", .reason = .json_mismatch },
+    .{ .id = "A2M4", .reason = .json_mismatch },
+    .{ .id = "CN3R", .reason = .json_mismatch },
+    .{ .id = "CT4Q", .reason = .json_mismatch },
+    .{ .id = "DC7X", .reason = .json_mismatch },
+    .{ .id = "LE5A", .reason = .json_mismatch },
+    .{ .id = "NJ66", .reason = .json_mismatch },
+    .{ .id = "WZ62", .reason = .json_mismatch },
+
+    // Multi-document tests: in.json contains multiple JSON values (18 cases)
+    .{ .id = "35KP", .reason = .multi_doc_json },
+    .{ .id = "5TYM", .reason = .multi_doc_json },
+    .{ .id = "6WLZ", .reason = .multi_doc_json },
+    .{ .id = "6XDY", .reason = .multi_doc_json },
+    .{ .id = "6ZKB", .reason = .multi_doc_json },
+    .{ .id = "7Z25", .reason = .multi_doc_json },
+    .{ .id = "9DXL", .reason = .multi_doc_json },
+    .{ .id = "9KAX", .reason = .multi_doc_json },
+    .{ .id = "9WXW", .reason = .multi_doc_json },
+    .{ .id = "JHB9", .reason = .multi_doc_json },
+    .{ .id = "KSS4", .reason = .multi_doc_json },
+    .{ .id = "L383", .reason = .multi_doc_json },
+    .{ .id = "M7A3", .reason = .multi_doc_json },
+    .{ .id = "PUW8", .reason = .multi_doc_json },
+    .{ .id = "RZT7", .reason = .multi_doc_json },
+    .{ .id = "U9NS", .reason = .multi_doc_json },
+    .{ .id = "UT92", .reason = .multi_doc_json },
+    .{ .id = "W4TN", .reason = .multi_doc_json },
+};
+
+fn isExpectedFailure(id: []const u8) ?FailureReason {
+    for (expected_failures) |ef| {
+        if (mem.eql(u8, ef.id, id)) return ef.reason;
+    }
+    return null;
+}
+
 const TestResults = struct {
     passed: usize = 0,
-    failed: usize = 0,
-    skipped: usize = 0,
+    expected_failures: usize = 0,
+    unexpected_failures: usize = 0,
+    unexpected_passes: usize = 0,
 
     fn total(self: TestResults) usize {
-        return self.passed + self.failed + self.skipped;
-    }
-
-    fn add(self: *TestResults, other: TestResults) void {
-        self.passed += other.passed;
-        self.failed += other.failed;
-        self.skipped += other.skipped;
+        return self.passed + self.expected_failures +
+            self.unexpected_failures + self.unexpected_passes;
     }
 };
 
-fn readFile(allocator: Allocator, dir: std.fs.Dir, name: []const u8) ?[]const u8 {
-    const file = dir.openFile(name, .{}) catch return null;
-    defer file.close();
-    return file.readToEndAlloc(allocator, 4 * 1024 * 1024) catch null;
+const ParsedTestCase = struct {
+    id: []const u8,
+    in_yaml: []const u8,
+    in_json: ?[]const u8,
+    is_error: bool,
+};
+
+fn parseTestFile(alloc: Allocator, content: []const u8) ![]ParsedTestCase {
+    var cases: std.ArrayList(ParsedTestCase) = .empty;
+
+    const State = enum { idle, in_yaml, in_json };
+    var state: State = .idle;
+    var current_id: []const u8 = "";
+    var is_error = false;
+    var yaml_buf: std.ArrayList(u8) = .empty;
+    var json_buf: std.ArrayList(u8) = .empty;
+
+    var line_it = mem.splitScalar(u8, content, '\n');
+    while (line_it.next()) |line| {
+        if (mem.startsWith(u8, line, "<!-- test: ")) {
+            if (state != .idle) {
+                try finishCase(alloc, &cases, current_id, &yaml_buf, &json_buf, is_error);
+            }
+            current_id = extractId(line);
+            is_error = false;
+            state = .idle;
+            yaml_buf = .empty;
+            json_buf = .empty;
+            continue;
+        }
+
+        if (mem.eql(u8, line, "<!-- error -->")) {
+            is_error = true;
+            continue;
+        }
+
+        if (mem.eql(u8, line, "<!-- in -->")) {
+            state = .in_yaml;
+            continue;
+        }
+
+        if (mem.eql(u8, line, "<!-- json -->")) {
+            state = .in_json;
+            continue;
+        }
+
+        switch (state) {
+            .in_yaml => {
+                if (yaml_buf.items.len > 0) try yaml_buf.append(alloc, '\n');
+                try yaml_buf.appendSlice(alloc, line);
+            },
+            .in_json => {
+                if (json_buf.items.len > 0) try json_buf.append(alloc, '\n');
+                try json_buf.appendSlice(alloc, line);
+            },
+            .idle => {},
+        }
+    }
+
+    if (current_id.len > 0 and state != .idle) {
+        try finishCase(alloc, &cases, current_id, &yaml_buf, &json_buf, is_error);
+    }
+
+    return cases.items;
 }
 
-fn fileExists(dir: std.fs.Dir, name: []const u8) bool {
-    const file = dir.openFile(name, .{}) catch return false;
-    file.close();
-    return true;
+fn finishCase(
+    alloc: Allocator,
+    cases: *std.ArrayList(ParsedTestCase),
+    id: []const u8,
+    yaml_buf: *std.ArrayList(u8),
+    json_buf: *std.ArrayList(u8),
+    is_error: bool,
+) !void {
+    // Restore the trailing newline stripped by line-by-line parsing
+    try yaml_buf.append(alloc, '\n');
+    const yaml = try alloc.dupe(u8, yaml_buf.items);
+    const json = if (json_buf.items.len > 0) try alloc.dupe(u8, json_buf.items) else null;
+    try cases.append(alloc, .{
+        .id = id,
+        .in_yaml = yaml,
+        .in_json = json,
+        .is_error = is_error,
+    });
+}
+
+fn extractId(line: []const u8) []const u8 {
+    const open = mem.lastIndexOfScalar(u8, line, '[') orelse return "";
+    const close = mem.lastIndexOfScalar(u8, line, ']') orelse return "";
+    if (close <= open) return "";
+    return line[open + 1 .. close];
+}
+
+fn recordResult(results: *TestResults, test_id: []const u8, failed: bool, detail: []const u8) void {
+    if (!failed) {
+        if (isExpectedFailure(test_id)) |reason| {
+            results.unexpected_passes += 1;
+            std.debug.print("  UNEXPECTED PASS: {s} (remove from expected_failures, was {s})\n", .{
+                test_id, @tagName(reason),
+            });
+        } else {
+            results.passed += 1;
+        }
+    } else {
+        if (isExpectedFailure(test_id) != null) {
+            results.expected_failures += 1;
+        } else {
+            results.unexpected_failures += 1;
+            std.debug.print("  UNEXPECTED FAIL: {s}: {s}\n", .{ test_id, detail });
+        }
+    }
 }
 
 fn runSingleCase(
     allocator: Allocator,
-    case_dir: std.fs.Dir,
-    test_id: []const u8,
+    tc: ParsedTestCase,
     results: *TestResults,
 ) void {
-    const yaml_input = readFile(allocator, case_dir, "in.yaml") orelse {
-        results.skipped += 1;
-        return;
-    };
-
-    const is_error_test = fileExists(case_dir, "error");
-
-    if (is_error_test) {
-        if (comb.parseFromSlice(std.json.Value, allocator, yaml_input, .{ .duplicate_keys = .last_wins })) |*p| {
+    if (tc.is_error) {
+        if (comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins })) |*p| {
             p.deinit();
-            results.failed += 1;
-            std.debug.print("  FAIL {s}: expected error, parsed OK\n", .{test_id});
+            recordResult(results, tc.id, true, "expected error, parsed OK");
         } else |_| {
-            results.passed += 1;
+            recordResult(results, tc.id, false, "");
         }
         return;
     }
 
-    const json_expected = readFile(allocator, case_dir, "in.json") orelse {
-        if (comb.parseFromSlice(std.json.Value, allocator, yaml_input, .{ .duplicate_keys = .last_wins })) |*p| {
+    const json_expected = tc.in_json orelse {
+        if (comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins })) |*p| {
             p.deinit();
-            results.passed += 1;
+            recordResult(results, tc.id, false, "");
         } else |_| {
-            results.failed += 1;
-            std.debug.print("  FAIL {s}: parse error (no json to compare)\n", .{test_id});
+            recordResult(results, tc.id, true, "parse error (no json to compare)");
         }
         return;
     };
 
-    var yaml_parsed = comb.parseFromSlice(std.json.Value, allocator, yaml_input, .{ .duplicate_keys = .last_wins }) catch {
-        results.failed += 1;
-        std.debug.print("  FAIL {s}: YAML parse error\n", .{test_id});
+    var yaml_parsed = comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins }) catch {
+        recordResult(results, tc.id, true, "YAML parse error");
         return;
     };
     defer yaml_parsed.deinit();
 
     const json_parsed = std.json.parseFromSlice(std.json.Value, allocator, json_expected, .{}) catch {
-        results.skipped += 1;
+        recordResult(results, tc.id, true, "cannot parse expected JSON");
         return;
     };
     defer json_parsed.deinit();
 
     if (jsonEqual(yaml_parsed.value, json_parsed.value)) {
-        results.passed += 1;
+        recordResult(results, tc.id, false, "");
     } else {
-        results.failed += 1;
-        if (results.failed <= 30) {
-            const got_tag: std.meta.Tag(std.json.Value) = yaml_parsed.value;
-            const exp_tag: std.meta.Tag(std.json.Value) = json_parsed.value;
-            if (got_tag == .string and exp_tag == .string) {
-                std.debug.print("  FAIL {s}: JSON mismatch (string)\n    got: \"{s}\"\n    exp: \"{s}\"\n", .{
-                    test_id,
-                    yaml_parsed.value.string,
-                    json_parsed.value.string,
-                });
-            } else {
-                std.debug.print("  FAIL {s}: JSON mismatch (got={s} expect={s})\n", .{
-                    test_id,
-                    @tagName(got_tag),
-                    @tagName(exp_tag),
-                });
-            }
+        const got_tag: std.meta.Tag(std.json.Value) = yaml_parsed.value;
+        const exp_tag: std.meta.Tag(std.json.Value) = json_parsed.value;
+        if (got_tag == .string and exp_tag == .string) {
+            recordResult(results, tc.id, true, "JSON mismatch (string)");
+        } else {
+            recordResult(results, tc.id, true, "JSON mismatch");
         }
     }
 }
@@ -118,8 +334,8 @@ fn jsonEqual(a: std.json.Value, b: std.json.Value) bool {
         .bool => a.bool == b.bool,
         .integer => a.integer == b.integer,
         .float => a.float == b.float,
-        .string => std.mem.eql(u8, a.string, b.string),
-        .number_string => std.mem.eql(u8, a.number_string, b.number_string),
+        .string => mem.eql(u8, a.string, b.string),
+        .number_string => mem.eql(u8, a.number_string, b.number_string),
         .array => {
             if (a.array.items.len != b.array.items.len) return false;
             for (a.array.items, b.array.items) |ai, bi| {
@@ -152,33 +368,36 @@ test "YAML Test Suite conformance" {
 
     var dir_it = suite_dir.iterate();
     while (dir_it.next() catch null) |entry| {
-        if (entry.kind != .directory) continue;
-        const test_id = entry.name;
+        if (entry.kind != .file) continue;
+        if (!mem.endsWith(u8, entry.name, ".test")) continue;
 
         var arena = std.heap.ArenaAllocator.init(alloc);
         defer arena.deinit();
         const aa = arena.allocator();
 
-        var test_dir = suite_dir.openDir(test_id, .{ .iterate = true }) catch continue;
-        defer test_dir.close();
+        const content = suite_dir.readFileAlloc(aa, entry.name, 4 * 1024 * 1024) catch continue;
+        const cases = parseTestFile(aa, content) catch continue;
 
-        if (fileExists(test_dir, "in.yaml")) {
-            runSingleCase(aa, test_dir, test_id, &total);
-        } else {
-            var sub_it = test_dir.iterate();
-            while (sub_it.next() catch null) |sub_entry| {
-                if (sub_entry.kind != .directory) continue;
-                var sub_dir = test_dir.openDir(sub_entry.name, .{}) catch continue;
-                defer sub_dir.close();
-
-                var id_buf: [16]u8 = undefined;
-                const full_id = std.fmt.bufPrint(&id_buf, "{s}/{s}", .{ test_id, sub_entry.name }) catch test_id;
-                runSingleCase(aa, sub_dir, full_id, &total);
-            }
+        for (cases) |tc| {
+            runSingleCase(aa, tc, &total);
         }
     }
 
-    std.debug.print("\n  YAML Test Suite: {d} passed, {d} failed, {d} skipped (of {d} total)\n\n", .{
-        total.passed, total.failed, total.skipped, total.total(),
+    std.debug.print("\n  YAML Test Suite: {d} passed, {d} expected failures, {d} unexpected ({d} total)\n", .{
+        total.passed,
+        total.expected_failures,
+        total.unexpected_failures + total.unexpected_passes,
+        total.total(),
     });
+
+    if (total.unexpected_failures > 0 or total.unexpected_passes > 0) {
+        std.debug.print("  ({d} unexpected failures, {d} unexpected passes)\n", .{
+            total.unexpected_failures, total.unexpected_passes,
+        });
+    }
+
+    std.debug.print("\n", .{});
+
+    try std.testing.expectEqual(@as(usize, 0), total.unexpected_failures);
+    try std.testing.expectEqual(@as(usize, 0), total.unexpected_passes);
 }

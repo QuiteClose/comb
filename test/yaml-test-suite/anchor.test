@@ -1,0 +1,506 @@
+<!-- test: Whitespace around colon in mappings [26DV] -->
+<!-- in -->
+"top1" : 
+  "key1" : &alias1 scalar1
+'top2' : 
+  'key2' : &alias2 scalar2
+top3: &node3 
+  *alias1 : scalar3
+top4: 
+  *alias2 : scalar4
+top5   :    
+  scalar5
+top6: 
+  &anchor6 'key6' : scalar6
+<!-- json -->
+{
+  "top1": {
+    "key1": "scalar1"
+  },
+  "top2": {
+    "key2": "scalar2"
+  },
+  "top3": {
+    "scalar1": "scalar3"
+  },
+  "top4": {
+    "scalar2": "scalar4"
+  },
+  "top5": "scalar5",
+  "top6": {
+    "key6": "scalar6"
+  }
+}
+
+<!-- test: Anchors With Colon in Name [2SXE] -->
+<!-- in -->
+&a: key: &a value
+foo:
+  *a:
+<!-- json -->
+{
+  "key": "value",
+  "foo": "key"
+}
+
+<!-- test: Spec Example 7.1. Alias Nodes [3GZX] -->
+<!-- in -->
+First occurrence: &anchor Foo
+Second occurrence: *anchor
+Override anchor: &anchor Bar
+Reuse anchor: *anchor
+<!-- json -->
+{
+  "First occurrence": "Foo",
+  "Second occurrence": "Foo",
+  "Override anchor": "Bar",
+  "Reuse anchor": "Bar"
+}
+
+<!-- test: Single block sequence with anchor [3R3P] -->
+<!-- in -->
+&sequence
+- a
+<!-- json -->
+[
+  "a"
+]
+
+<!-- test: Scalar value with two anchors [4JVG] -->
+<!-- error -->
+<!-- in -->
+top1: &node1
+  &k1 key1: val1
+top2: &node2
+  &v2 val2
+
+<!-- test: Anchor for empty node [6KGN] -->
+<!-- in -->
+---
+a: &anchor
+b: *anchor
+<!-- json -->
+{
+  "a": null,
+  "b": null
+}
+
+<!-- test: Node and Mapping Key Anchors [1.3] [7BMT] -->
+<!-- in -->
+---
+top1: &node1
+  &k1 key1: one
+top2: &node2 # comment
+  key2: two
+top3:
+  &k3 key3: three
+top4: &node4
+  &k4 key4: four
+top5: &node5
+  key5: five
+top6: &val6
+  six
+top7:
+  &val7 seven
+<!-- json -->
+{
+  "top1": {
+    "key1": "one"
+  },
+  "top2": {
+    "key2": "two"
+  },
+  "top3": {
+    "key3": "three"
+  },
+  "top4": {
+    "key4": "four"
+  },
+  "top5": {
+    "key5": "five"
+  },
+  "top6": "six",
+  "top7": "seven"
+}
+
+<!-- test: Spec Example 2.10. Node for “Sammy Sosa” appears twice in this document [7BUB] -->
+<!-- in -->
+---
+hr:
+  - Mark McGwire
+  # Following node labeled SS
+  - &SS Sammy Sosa
+rbi:
+  - *SS # Subsequent occurrence
+  - Ken Griffey
+<!-- json -->
+{
+  "hr": [
+    "Mark McGwire",
+    "Sammy Sosa"
+  ],
+  "rbi": [
+    "Sammy Sosa",
+    "Ken Griffey"
+  ]
+}
+
+<!-- test: Anchor with unicode character [8XYN] -->
+<!-- in -->
+---
+- &😁 unicode anchor
+<!-- json -->
+[
+  "unicode anchor"
+]
+
+<!-- test: Various combinations of tags and anchors [9KAX] -->
+<!-- in -->
+---
+&a1
+!!str
+scalar1
+---
+!!str
+&a2
+scalar2
+---
+&a3
+!!str scalar3
+---
+&a4 !!map
+&a5 !!str key5: value4
+---
+a6: 1
+&anchor6 b6: 2
+---
+!!map
+&a8 !!str key8: value7
+---
+!!map
+!!str &a10 key10: value9
+---
+!!str &a11
+value11
+<!-- json -->
+"scalar1"
+"scalar2"
+"scalar3"
+{
+  "key5": "value4"
+}
+{
+  "a6": 1,
+  "b6": 2
+}
+{
+  "key8": "value7"
+}
+{
+  "key10": "value9"
+}
+"value11"
+
+<!-- test: Node Anchor and Tag on Seperate Lines [BU8L] -->
+<!-- in -->
+key: &anchor
+ !!map
+  a: b
+<!-- json -->
+{
+  "key": {
+    "a": "b"
+  }
+}
+
+<!-- test: Spec Example 2.24. Global Tags [C4HZ] -->
+<!-- in -->
+%TAG ! tag:clarkevans.com,2002:
+--- !shape
+  # Use the ! handle for presenting
+  # tag:clarkevans.com,2002:circle
+- !circle
+  center: &ORIGIN {x: 73, y: 129}
+  radius: 7
+- !line
+  start: *ORIGIN
+  finish: { x: 89, y: 102 }
+- !label
+  start: *ORIGIN
+  color: 0xFFEEBB
+  text: Pretty vector drawing.
+<!-- json -->
+[
+  {
+    "center": {
+      "x": 73,
+      "y": 129
+    },
+    "radius": 7
+  },
+  {
+    "start": {
+      "x": 73,
+      "y": 129
+    },
+    "finish": {
+      "x": 89,
+      "y": 102
+    }
+  },
+  {
+    "start": {
+      "x": 73,
+      "y": 129
+    },
+    "color": 16772795,
+    "text": "Pretty vector drawing."
+  }
+]
+
+<!-- test: Various location of anchors in flow sequence [CN3R] -->
+<!-- in -->
+&flowseq [
+ a: b,
+ &c c: d,
+ { &e e: f },
+ &g { g: h }
+]
+<!-- json -->
+[
+  {
+    "a": "b"
+  },
+  {
+    "c": "d"
+  },
+  {
+    "e": "f"
+  },
+  {
+    "g": "h"
+  }
+]
+
+<!-- test: Spec Example 5.6. Node Property Indicators [CUP7] -->
+<!-- in -->
+anchored: !local &anchor value
+alias: *anchor
+<!-- json -->
+{
+  "anchored": "value",
+  "alias": "value"
+}
+
+<!-- test: Mapping with anchor on document start line [CXX2] -->
+<!-- error -->
+<!-- in -->
+--- &anchor a: b
+
+<!-- test: Aliases in Implicit Block Mapping [E76Z] -->
+<!-- in -->
+&a a: &b b
+*b : *a
+<!-- json -->
+{
+  "a": "b",
+  "b": "a"
+}
+
+<!-- test: Anchors and Tags [F2C7] -->
+<!-- in -->
+ - &a !!str a
+ - !!int 2
+ - !!int &c 4
+ - &d d
+<!-- json -->
+[
+  "a",
+  2,
+  4,
+  "d"
+]
+
+<!-- test: Single block sequence with anchor and explicit document start [FTA2] -->
+<!-- in -->
+--- &sequence
+- a
+<!-- json -->
+[
+  "a"
+]
+
+<!-- test: Invalid anchor in zero indented sequence [G9HC] -->
+<!-- error -->
+<!-- in -->
+---
+seq:
+&anchor
+- a
+- b
+
+<!-- test: Node anchor in sequence [GT5M] -->
+<!-- error -->
+<!-- in -->
+- item1
+&node
+- item2
+
+<!-- test: Node anchor not indented [H7J7] -->
+<!-- error -->
+<!-- in -->
+key: &x
+!!map
+  a: b
+
+<!-- test: Spec Example 6.23. Node Properties [HMQ5] -->
+<!-- in -->
+!!str &a1 "foo":
+  !!str bar
+&a2 baz : *a1
+<!-- json -->
+{
+  "foo": "bar",
+  "baz": "foo"
+}
+
+<!-- test: Spec Example 6.29. Node Anchors [JS2J] -->
+<!-- in -->
+First occurrence: &anchor Value
+Second occurrence: *anchor
+<!-- json -->
+{
+  "First occurrence": "Value",
+  "Second occurrence": "Value"
+}
+
+<!-- test: Spec Example 7.24. Flow Nodes [LE5A] -->
+<!-- in -->
+- !!str "a"
+- 'b'
+- &anchor "c"
+- *anchor
+- !!str
+<!-- json -->
+[
+  "a",
+  "b",
+  "c",
+  "c",
+  ""
+]
+
+<!-- test: Anchor before zero indented sequence [SKE5] -->
+<!-- in -->
+---
+seq:
+ &anchor
+- a
+- b
+<!-- json -->
+{
+  "seq": [
+    "a",
+    "b"
+  ]
+}
+
+<!-- test: Anchor plus Alias [SR86] -->
+<!-- error -->
+<!-- in -->
+key1: &a value
+key2: &b *a
+
+<!-- test: Anchor and alias as mapping key [SU74] -->
+<!-- error -->
+<!-- in -->
+key1: &alias value1
+&b *alias : value2
+
+<!-- test: Anchor before sequence entry on same line [SY6V] -->
+<!-- error -->
+<!-- in -->
+&anchor - sequence entry
+
+<!-- test: Node and Mapping Key Anchors [U3XV] -->
+<!-- in -->
+---
+top1: &node1
+  &k1 key1: one
+top2: &node2 # comment
+  key2: two
+top3:
+  &k3 key3: three
+top4:
+  &node4
+  &k4 key4: four
+top5:
+  &node5
+  key5: five
+top6: &val6
+  six
+top7:
+  &val7 seven
+<!-- json -->
+{
+  "top1": {
+    "key1": "one"
+  },
+  "top2": {
+    "key2": "two"
+  },
+  "top3": {
+    "key3": "three"
+  },
+  "top4": {
+    "key4": "four"
+  },
+  "top5": {
+    "key5": "five"
+  },
+  "top6": "six",
+  "top7": "seven"
+}
+
+<!-- test: Aliases in Block Sequence [V55R] -->
+<!-- in -->
+- &a a
+- &b b
+- *a
+- *b
+<!-- json -->
+[
+  "a",
+  "b",
+  "a",
+  "b"
+]
+
+<!-- test: Allowed characters in alias [W5VH] -->
+<!-- in -->
+a: &:@*!$"<foo>: scalar a
+b: *:@*!$"<foo>:
+<!-- json -->
+{
+  "a": "scalar a",
+  "b": "scalar a"
+}
+
+<!-- test: Anchor with colon in the middle [Y2GN] -->
+<!-- in -->
+---
+key: &an:chor value
+<!-- json -->
+{
+  "key": "value"
+}
+
+<!-- test: Anchors in Mapping [ZH7C] -->
+<!-- in -->
+&a a: b
+c: &d d
+<!-- json -->
+{
+  "a": "b",
+  "c": "d"
+}

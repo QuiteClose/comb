@@ -1,0 +1,250 @@
+<!-- test: Tab indented top flow [6CA3] -->
+<!-- in -->
+	[
+	]
+<!-- json -->
+[]
+
+<!-- test: Empty Stream [AVM7] -->
+<!-- in -->
+
+<!-- json -->
+
+
+<!-- test: Tabs that look like indentation [DK95/00] -->
+<!-- in -->
+foo:
+ 	bar
+<!-- json -->
+{
+  "foo" : "bar"
+}
+
+<!-- test: Tabs that look like indentation [DK95/01] -->
+<!-- error -->
+<!-- in -->
+foo: "bar
+	baz"
+<!-- json -->
+{
+  "foo" : "bar"
+}
+
+<!-- test: Tabs that look like indentation [DK95/02] -->
+<!-- in -->
+foo: "bar
+  	baz"
+<!-- json -->
+{
+  "foo" : "bar baz"
+}
+
+<!-- test: Tabs that look like indentation [DK95/03] -->
+<!-- in -->
+ 	
+foo: 1
+<!-- json -->
+{
+  "foo" : 1
+}
+
+<!-- test: Tabs that look like indentation [DK95/04] -->
+<!-- in -->
+foo: 1
+	
+bar: 2
+<!-- json -->
+{
+  "foo" : 1,
+  "bar" : 2
+}
+
+<!-- test: Tabs that look like indentation [DK95/05] -->
+<!-- in -->
+foo: 1
+ 	
+bar: 2
+<!-- json -->
+{
+  "foo" : 1,
+  "bar" : 2
+}
+
+<!-- test: Tabs that look like indentation [DK95/06] -->
+<!-- error -->
+<!-- in -->
+foo:
+  a: 1
+  	b: 2
+<!-- json -->
+{
+  "foo" : 1,
+  "bar" : 2
+}
+
+<!-- test: Tabs that look like indentation [DK95/07] -->
+<!-- in -->
+%YAML 1.2
+	
+---
+<!-- json -->
+null
+
+<!-- test: Tabs that look like indentation [DK95/08] -->
+<!-- in -->
+foo: "bar
+ 	 	 baz 	 	 "
+<!-- json -->
+{
+  "foo" : "bar baz \t \t "
+}
+
+<!-- test: Spec Example 5.12. Tabs and Spaces [J3BT] -->
+<!-- in -->
+# Tabs and spaces
+quoted: "Quoted 	"
+block:	|
+  void main() {
+  	printf("Hello, world!\n");
+  }
+<!-- json -->
+{
+  "quoted": "Quoted \t",
+  "block": "void main() {\n\tprintf(\"Hello, world!\\n\");\n}\n"
+}
+
+<!-- test: Multiline unidented double quoted block key [JKF3] -->
+<!-- error -->
+<!-- in -->
+- - "bar
+bar": x
+
+<!-- test: Trailing line of spaces [L24T/00] -->
+<!-- in -->
+foo: |
+  x
+   
+<!-- json -->
+{
+  "foo" : "x\n \n"
+}
+
+<!-- test: Trailing line of spaces [L24T/01] -->
+<!-- in -->
+foo: |
+  x
+   
+<!-- json -->
+{
+  "foo" : "x\n \n"
+}
+
+<!-- test: Block sequence indentation [M6YH] -->
+<!-- in -->
+- |
+ x
+-
+ foo: bar
+-
+ - 42
+<!-- json -->
+[
+  "x\n",
+  {
+    "foo" : "bar"
+  },
+  [
+    42
+  ]
+]
+
+<!-- test: Legal tab after indentation [UV7Q] -->
+<!-- in -->
+x:
+ - x
+  	x
+<!-- json -->
+{
+  "x": [
+    "x x"
+  ]
+}
+
+<!-- test: Tabs in various contexts [Y79Y/000] -->
+<!-- error -->
+<!-- in -->
+foo: |
+	
+bar: 1
+
+<!-- test: Tabs in various contexts [Y79Y/001] -->
+<!-- in -->
+foo: |
+ 	
+bar: 1
+<!-- json -->
+{
+  "foo": "\t\n",
+  "bar": 1
+}
+
+<!-- test: Tabs in various contexts [Y79Y/002] -->
+<!-- in -->
+- [
+	
+ foo
+ ]
+<!-- json -->
+[
+  [
+    "foo"
+  ]
+]
+
+<!-- test: Tabs in various contexts [Y79Y/003] -->
+<!-- error -->
+<!-- in -->
+- [
+	foo,
+ foo
+ ]
+
+<!-- test: Tabs in various contexts [Y79Y/004] -->
+<!-- error -->
+<!-- in -->
+-	-
+
+<!-- test: Tabs in various contexts [Y79Y/005] -->
+<!-- error -->
+<!-- in -->
+- 	-
+
+<!-- test: Tabs in various contexts [Y79Y/006] -->
+<!-- error -->
+<!-- in -->
+?	-
+
+<!-- test: Tabs in various contexts [Y79Y/007] -->
+<!-- error -->
+<!-- in -->
+? -
+:	-
+
+<!-- test: Tabs in various contexts [Y79Y/008] -->
+<!-- error -->
+<!-- in -->
+?	key:
+
+<!-- test: Tabs in various contexts [Y79Y/009] -->
+<!-- error -->
+<!-- in -->
+? key:
+:	key:
+
+<!-- test: Tabs in various contexts [Y79Y/010] -->
+<!-- in -->
+-	-1
+<!-- json -->
+[
+  -1
+]

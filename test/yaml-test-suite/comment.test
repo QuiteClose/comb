@@ -1,0 +1,40 @@
+<!-- test: Spec Example 5.5. Comment Indicator [98YD] -->
+<!-- in -->
+# Comment only.
+<!-- json -->
+
+
+<!-- test: Various trailing tabs [DC7X] -->
+<!-- in -->
+a: b	
+seq:	
+ - a	
+c: d	#X
+<!-- json -->
+{
+  "a": "b",
+  "seq": [
+    "a"
+  ],
+  "c": "d"
+}
+
+<!-- test: Two scalar docs with trailing comments [L383] -->
+<!-- in -->
+--- foo  # comment
+--- foo  # comment
+<!-- json -->
+"foo"
+"foo"
+
+<!-- test: Spec Example 6.11. Multi-Line Comments [P94K] -->
+<!-- in -->
+key:    # Comment
+        # lines
+  value
+
+
+<!-- json -->
+{
+  "key": "value"
+}
