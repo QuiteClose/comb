@@ -248,6 +248,7 @@ fn applyTagAndAnchor(self: *Parser, value: Value, tag: ?[]const u8, anchor_name:
 
 fn applyTag(self: *Parser, value: Value, tag: []const u8) opts.Error!Value {
     if (std.mem.eql(u8, tag, "!") or std.mem.eql(u8, tag, "!!str")) {
+        if (value == .null_val) return .{ .string = "" };
         return .{ .string = try self.valueToString(value) };
     } else if (std.mem.eql(u8, tag, "!!int")) {
         return switch (value) {
@@ -681,21 +682,39 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
             return .{ .array = items.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
         }
 
-        const val = try self.parseFlowValue();
-
-        self.skipFlowWhitespace();
-        if (!self.atEnd() and self.peek() == ':' and self.isFlowIndicatorNext()) {
+        // Explicit key with ? creates a mapping entry in the sequence
+        if (self.peek() == '?' and self.isFlowIndicatorNext()) {
             self.pos += 1;
             self.skipFlowWhitespace();
-            const map_val = if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
-                try self.parseFlowValue()
-            else
-                Value{ .null_val = {} };
-            const entry = [_]Entry{.{ .key = val, .value = map_val }};
+            const key = try self.parseFlowValue();
+            self.skipFlowWhitespace();
+            var value: Value = .{ .null_val = {} };
+            if (!self.atEnd() and self.peek() == ':') {
+                self.pos += 1;
+                self.skipFlowWhitespace();
+                if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
+                    value = try self.parseFlowValue();
+            }
+            const entry = [_]Entry{.{ .key = key, .value = value }};
             const owned = self.allocator.dupe(Entry, &entry) catch return error.OutOfMemory;
             items.append(self.allocator, .{ .object = owned }) catch return error.OutOfMemory;
         } else {
-            items.append(self.allocator, val) catch return error.OutOfMemory;
+            const val = try self.parseFlowValue();
+
+            self.skipFlowWhitespace();
+            if (!self.atEnd() and self.peek() == ':' and self.isFlowIndicatorNext()) {
+                self.pos += 1;
+                self.skipFlowWhitespace();
+                const map_val = if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
+                    try self.parseFlowValue()
+                else
+                    Value{ .null_val = {} };
+                const entry = [_]Entry{.{ .key = val, .value = map_val }};
+                const owned = self.allocator.dupe(Entry, &entry) catch return error.OutOfMemory;
+                items.append(self.allocator, .{ .object = owned }) catch return error.OutOfMemory;
+            } else {
+                items.append(self.allocator, val) catch return error.OutOfMemory;
+            }
         }
 
         self.skipFlowWhitespace();
@@ -837,6 +856,22 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
     const fc = self.peek();
     if (fc == '"') return .{ .string = try self.parseDoubleQuoted() };
     if (fc == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (fc == '*') return self.parseAlias();
+    if (fc == '!') {
+        const t = try self.parseTag();
+        self.skipFlowWhitespace();
+        if (self.atEnd() or self.peek() == ':' or self.peek() == ',' or self.peek() == '}')
+            return self.applyTag(.{ .null_val = {} }, t);
+        const val = try self.parseFlowKey();
+        return self.applyTag(val, t);
+    }
+    if (fc == '&') {
+        const name = try self.parseAnchorDef();
+        self.skipFlowWhitespace();
+        const val = try self.parseFlowKey();
+        self.anchors.put(name, val) catch return error.OutOfMemory;
+        return val;
+    }
 
     const start = self.pos;
     while (self.pos < self.input.len) {

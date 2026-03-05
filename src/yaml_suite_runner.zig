@@ -104,7 +104,6 @@ const expected_failures: []const ExpectedFailure = &.{
 
     // Parser rejects valid YAML (2 cases)
     .{ .id = "P76L", .reason = .parse_error },
-    .{ .id = "X38W", .reason = .parse_error },
 
     // Parser produces wrong JSON output (11 cases)
     .{ .id = "565N", .reason = .json_mismatch },
@@ -112,12 +111,8 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "82AN", .reason = .json_mismatch },
     .{ .id = "8KB6", .reason = .json_mismatch },
     .{ .id = "A2M4", .reason = .json_mismatch },
-    .{ .id = "CN3R", .reason = .json_mismatch },
-    .{ .id = "CT4Q", .reason = .json_mismatch },
     .{ .id = "DC7X", .reason = .json_mismatch },
-    .{ .id = "LE5A", .reason = .json_mismatch },
     .{ .id = "NJ66", .reason = .json_mismatch },
-    .{ .id = "WZ62", .reason = .json_mismatch },
 
     // Multi-document test with flow key folding bug (Phase 2b)
     .{ .id = "UT92", .reason = .json_mismatch },
