@@ -9,6 +9,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const value_mod = @import("Value.zig");
+const opts = @import("options.zig");
 
 /// A YAML value with full fidelity: scalars, collections, binary, and tags.
 pub const Value = value_mod.Value;
@@ -20,72 +21,22 @@ pub const Entry = value_mod.Entry;
 pub const Tagged = value_mod.Tagged;
 
 /// Options controlling how YAML is parsed.
-pub const ParseOptions = struct {
-    /// How duplicate mapping keys are handled.
-    duplicate_keys: DuplicateKeyBehavior = .err,
-    /// Maximum nesting depth (null for unlimited).
-    max_depth: ?u16 = 256,
-    /// If non-null, receives error location details on parse failure.
-    diagnostics: ?*Diagnostics = null,
-};
+pub const ParseOptions = opts.ParseOptions;
 
 /// Strategy for handling duplicate keys within a single mapping.
-pub const DuplicateKeyBehavior = enum {
-    /// Return an error on duplicate keys.
-    err,
-    /// Silently keep the last value for duplicate keys.
-    last_wins,
-};
+pub const DuplicateKeyBehavior = opts.DuplicateKeyBehavior;
 
 /// Error location details populated when parsing fails.
-pub const Diagnostics = struct {
-    line: usize = 0,
-    column: usize = 0,
-    message: []const u8 = "",
-    source_line: []const u8 = "",
-};
+pub const Diagnostics = opts.Diagnostics;
 
 /// Options controlling output formatting for JSON and YAML rendering.
-pub const OutputOptions = struct {
-    /// Sort mapping keys alphabetically in output.
-    sort_keys: bool = false,
-    /// Number of spaces per indentation level.
-    indent: u8 = 2,
-};
+pub const OutputOptions = opts.OutputOptions;
 
 /// Wrapper for a parsed result that owns an arena allocator.
 /// Call `deinit()` to free all memory when done.
-pub fn Parsed(comptime T: type) type {
-    return struct {
-        value: T,
-        arena: std.heap.ArenaAllocator,
+pub const Parsed = opts.Parsed;
 
-        pub fn deinit(self: *@This()) void {
-            self.arena.deinit();
-        }
-    };
-}
-
-pub const Error = error{
-    UnexpectedCharacter,
-    UnexpectedEndOfInput,
-    InvalidIndentation,
-    DuplicateKey,
-    MaxDepthExceeded,
-    InvalidEscapeSequence,
-    InvalidUtf8,
-    InvalidNumber,
-    InvalidTag,
-    UndefinedAlias,
-    CircularReference,
-    UnclosedQuote,
-    UnclosedFlowSequence,
-    UnclosedFlowMapping,
-    InvalidBlockScalar,
-    InvalidDirective,
-    InvalidAnchor,
-    OutOfMemory,
-};
+pub const Error = opts.Error;
 
 /// Parse YAML into T (either std.json.Value or comb.Value).
 /// When T is std.json.Value, returns std.json.Parsed for maximum interop.
@@ -228,6 +179,7 @@ pub fn indentToWhitespace(indent: u8) @TypeOf(@as(std.json.Stringify.Options, .{
 
 test {
     _ = value_mod;
+    _ = opts;
     _ = @import("Parser.zig");
     _ = @import("Renderer.zig");
     _ = @import("yaml_suite_runner.zig");

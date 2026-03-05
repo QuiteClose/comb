@@ -1,19 +1,23 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const opts = @import("options.zig");
+const value_mod = @import("Value.zig");
+const Value = value_mod.Value;
+const Entry = value_mod.Entry;
+
+// Test-only import: root.zig is used exclusively in the test blocks below.
 const root = @import("root.zig");
-const Value = root.Value;
-const Entry = root.Entry;
 
 const Parser = @This();
 
 input: []const u8,
 pos: usize,
 allocator: Allocator,
-options: root.ParseOptions,
+options: opts.ParseOptions,
 depth: u16,
 anchors: std.StringHashMap(Value),
 
-pub fn init(allocator: Allocator, input: []const u8, options: root.ParseOptions) Parser {
+pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
     return .{
         .input = input,
         .pos = 0,
@@ -24,7 +28,7 @@ pub fn init(allocator: Allocator, input: []const u8, options: root.ParseOptions)
     };
 }
 
-pub fn parseDocument(self: *Parser) root.Error!Value {
+pub fn parseDocument(self: *Parser) opts.Error!Value {
     self.skipBom();
     self.skipWhitespaceAndComments();
 
@@ -47,7 +51,7 @@ pub fn parseDocument(self: *Parser) root.Error!Value {
     return self.parseNode(0);
 }
 
-pub fn parseAllDocuments(self: *Parser) root.Error![]const Value {
+pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
     self.skipBom();
     var docs: std.ArrayList(Value) = .empty;
 
@@ -96,7 +100,7 @@ pub fn parseAllDocuments(self: *Parser) root.Error![]const Value {
 
 // ── Core parsing ────────────────────────────────────────────────────────
 
-fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
+fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
     self.skipWhitespaceAndComments();
     if (self.atEnd()) return .{ .null_val = {} };
     if (self.isDocumentMarker()) return .{ .null_val = {} };
@@ -219,7 +223,7 @@ fn parseNode(self: *Parser, min_col: usize) root.Error!Value {
     return self.applyTagAndAnchor(result, tag, anchor_name);
 }
 
-fn applyTagAndAnchor(self: *Parser, value: Value, tag: ?[]const u8, anchor_name: ?[]const u8) root.Error!Value {
+fn applyTagAndAnchor(self: *Parser, value: Value, tag: ?[]const u8, anchor_name: ?[]const u8) opts.Error!Value {
     var result = value;
 
     if (tag) |t| {
@@ -233,7 +237,7 @@ fn applyTagAndAnchor(self: *Parser, value: Value, tag: ?[]const u8, anchor_name:
     return result;
 }
 
-fn applyTag(self: *Parser, value: Value, tag: []const u8) root.Error!Value {
+fn applyTag(self: *Parser, value: Value, tag: []const u8) opts.Error!Value {
     if (std.mem.eql(u8, tag, "!") or std.mem.eql(u8, tag, "!!str")) {
         return .{ .string = try self.valueToString(value) };
     } else if (std.mem.eql(u8, tag, "!!int")) {
@@ -282,7 +286,7 @@ fn applyTag(self: *Parser, value: Value, tag: []const u8) root.Error!Value {
     }
 }
 
-fn valueToString(self: *Parser, value: Value) root.Error![]const u8 {
+fn valueToString(self: *Parser, value: Value) opts.Error![]const u8 {
     return switch (value) {
         .string => |s| s,
         .integer => |i| std.fmt.allocPrint(self.allocator, "{d}", .{i}) catch return error.OutOfMemory,
@@ -295,13 +299,13 @@ fn valueToString(self: *Parser, value: Value) root.Error![]const u8 {
 
 // ── Block mapping ───────────────────────────────────────────────────────
 
-fn parseBlockMapping(self: *Parser, indent: usize) root.Error!Value {
+fn parseBlockMapping(self: *Parser, indent: usize) opts.Error!Value {
     var entries: std.ArrayList(Entry) = .empty;
     try self.parseRemainingMappingEntries(&entries, indent);
     return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
-fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize) root.Error!Value {
+fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize) opts.Error!Value {
     var entries: std.ArrayList(Entry) = .empty;
 
     self.pos += 1; // skip ':'
@@ -314,7 +318,7 @@ fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize)
     return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
-fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), indent: usize) root.Error!void {
+fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), indent: usize) opts.Error!void {
     while (!self.atEnd()) {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
@@ -384,7 +388,7 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
     }
 }
 
-fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) root.Error!Value {
+fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Value {
     var entries: std.ArrayList(Entry) = .empty;
 
     while (!self.atEnd()) {
@@ -429,7 +433,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) root.Error!Valu
     return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
 }
 
-fn parseMergeValue(self: *Parser, entries: *std.ArrayList(Entry), indent: usize) root.Error!void {
+fn parseMergeValue(self: *Parser, entries: *std.ArrayList(Entry), indent: usize) opts.Error!void {
     if (self.atEnd() or self.atEndOfLine()) {
         self.skipNewline();
         self.skipBlankAndCommentLines();
@@ -460,7 +464,7 @@ fn parseMergeValue(self: *Parser, entries: *std.ArrayList(Entry), indent: usize)
     self.skipNewline();
 }
 
-fn applyMerge(self: *Parser, entries: *std.ArrayList(Entry), source: Value) root.Error!void {
+fn applyMerge(self: *Parser, entries: *std.ArrayList(Entry), source: Value) opts.Error!void {
     switch (source) {
         .object => |src_entries| {
             for (src_entries) |src_entry| {
@@ -480,7 +484,7 @@ fn applyMerge(self: *Parser, entries: *std.ArrayList(Entry), source: Value) root
     }
 }
 
-fn parseBlockMappingKey(self: *Parser) root.Error!Value {
+fn parseBlockMappingKey(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return self.fail("UnexpectedEndOfInput");
     const c = self.peek();
     if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
@@ -508,12 +512,12 @@ fn parseBlockMappingKey(self: *Parser) root.Error!Value {
     return .{ .string = raw };
 }
 
-fn consumeColon(self: *Parser) root.Error!void {
+fn consumeColon(self: *Parser) opts.Error!void {
     if (self.atEnd() or self.peek() != ':') return self.fail("UnexpectedCharacter");
     self.pos += 1;
 }
 
-fn checkDuplicateKey(self: *Parser, items: []const Entry, key: Value) root.Error!void {
+fn checkDuplicateKey(self: *Parser, items: []const Entry, key: Value) opts.Error!void {
     if (self.options.duplicate_keys == .err) {
         for (items) |existing| {
             if (existing.key.eql(key)) return self.fail("DuplicateKey");
@@ -521,7 +525,7 @@ fn checkDuplicateKey(self: *Parser, items: []const Entry, key: Value) root.Error
     }
 }
 
-fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
+fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
     if (self.atEnd() or self.atEndOfLine()) {
         self.skipNewline();
         self.skipBlankAndCommentLines();
@@ -597,7 +601,7 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) root.Error!Value {
     return self.parsePlainScalar(map_indent + 1);
 }
 
-fn parseInlineValue(self: *Parser) root.Error!Value {
+fn parseInlineValue(self: *Parser) opts.Error!Value {
     const start = self.pos;
     while (self.pos < self.input.len) {
         if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') break;
@@ -618,7 +622,7 @@ fn parseInlineValue(self: *Parser) root.Error!Value {
 
 // ── Block sequence ──────────────────────────────────────────────────────
 
-fn parseBlockSequence(self: *Parser, indent: usize) root.Error!Value {
+fn parseBlockSequence(self: *Parser, indent: usize) opts.Error!Value {
     var items: std.ArrayList(Value) = .empty;
 
     while (!self.atEnd()) {
@@ -662,7 +666,7 @@ fn parseBlockSequence(self: *Parser, indent: usize) root.Error!Value {
 
 // ── Flow collections ────────────────────────────────────────────────────
 
-fn parseFlowSequence(self: *Parser) root.Error!Value {
+fn parseFlowSequence(self: *Parser) opts.Error!Value {
     if (self.atEnd() or self.peek() != '[') return self.fail("UnexpectedCharacter");
     self.pos += 1;
     self.depth += 1;
@@ -711,7 +715,7 @@ fn parseFlowSequence(self: *Parser) root.Error!Value {
     return self.fail("UnclosedFlowSequence");
 }
 
-fn parseFlowMapping(self: *Parser) root.Error!Value {
+fn parseFlowMapping(self: *Parser) opts.Error!Value {
     if (self.atEnd() or self.peek() != '{') return self.fail("UnexpectedCharacter");
     self.pos += 1;
     self.depth += 1;
@@ -765,7 +769,7 @@ fn parseFlowMapping(self: *Parser) root.Error!Value {
     return self.fail("UnclosedFlowMapping");
 }
 
-fn parseFlowValue(self: *Parser) root.Error!Value {
+fn parseFlowValue(self: *Parser) opts.Error!Value {
     self.skipFlowWhitespace();
     if (self.atEnd()) return .{ .null_val = {} };
 
@@ -836,7 +840,7 @@ fn parseFlowValue(self: *Parser) root.Error!Value {
     return detectScalarType(result.toOwnedSlice(self.allocator) catch return error.OutOfMemory);
 }
 
-fn parseFlowKey(self: *Parser) root.Error!Value {
+fn parseFlowKey(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return self.fail("UnexpectedEndOfInput");
     const fc = self.peek();
     if (fc == '"') return .{ .string = try self.parseDoubleQuoted() };
@@ -864,7 +868,7 @@ fn parseFlowKey(self: *Parser) root.Error!Value {
 
 // ── Block scalar ────────────────────────────────────────────────────────
 
-fn parseBlockScalar(self: *Parser, parent_indent: ?usize) root.Error!Value {
+fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
     if (self.atEnd()) return self.fail("InvalidBlockScalar");
     const style = self.peek();
     self.pos += 1;
@@ -1031,7 +1035,7 @@ fn findNextNonblankType(content_lines: []const []const u8, start: usize) ?enum {
 
 // ── Scalar parsing ──────────────────────────────────────────────────────
 
-fn parsePlainScalar(self: *Parser, min_col: usize) root.Error!Value {
+fn parsePlainScalar(self: *Parser, min_col: usize) opts.Error!Value {
     const Part = struct { text: []const u8, blank_before: bool };
     var parts: std.ArrayList(Part) = .empty;
     defer parts.deinit(self.allocator);
@@ -1154,7 +1158,7 @@ fn parseBoolStr(s: []const u8) ?bool {
 
 // ── Quoted strings ──────────────────────────────────────────────────────
 
-fn parseDoubleQuoted(self: *Parser) root.Error![]const u8 {
+fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '"') return self.fail("UnclosedQuote");
     self.pos += 1;
 
@@ -1247,7 +1251,7 @@ fn parseDoubleQuoted(self: *Parser) root.Error![]const u8 {
     return self.fail("UnclosedQuote");
 }
 
-fn parseSingleQuoted(self: *Parser) root.Error![]const u8 {
+fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '\'') return self.fail("UnclosedQuote");
     self.pos += 1;
 
@@ -1317,7 +1321,7 @@ fn appendUtf8(self: *Parser, list: *std.ArrayList(u8), codepoint: u21) void {
 
 // ── Anchors and aliases ─────────────────────────────────────────────────
 
-fn parseAnchorDef(self: *Parser) root.Error![]const u8 {
+fn parseAnchorDef(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '&') return self.fail("InvalidAnchor");
     self.pos += 1;
     const start = self.pos;
@@ -1334,7 +1338,7 @@ fn parseAnchorDef(self: *Parser) root.Error![]const u8 {
     return self.input[start..self.pos];
 }
 
-fn parseAlias(self: *Parser) root.Error!Value {
+fn parseAlias(self: *Parser) opts.Error!Value {
     if (self.atEnd() or self.peek() != '*') return self.fail("UndefinedAlias");
     self.pos += 1;
     const start = self.pos;
@@ -1354,7 +1358,7 @@ fn parseAlias(self: *Parser) root.Error!Value {
 
 // ── Tags ────────────────────────────────────────────────────────────────
 
-fn parseTag(self: *Parser) root.Error![]const u8 {
+fn parseTag(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '!') return self.fail("InvalidTag");
     self.pos += 1;
     if (self.pos < self.input.len and self.input[self.pos] == '<') {
@@ -1571,7 +1575,7 @@ fn findKeyValueSep(line: []const u8) ?usize {
     return null;
 }
 
-fn fail(self: *Parser, comptime which: []const u8) root.Error {
+fn fail(self: *Parser, comptime which: []const u8) opts.Error {
     if (self.options.diagnostics) |diag| {
         var line: usize = 1;
         var col: usize = 1;
@@ -1593,7 +1597,7 @@ fn fail(self: *Parser, comptime which: []const u8) root.Error {
         diag.source_line = self.input[line_start..line_end];
     }
 
-    return @field(root.Error, which);
+    return @field(opts.Error, which);
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────

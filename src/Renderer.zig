@@ -1,17 +1,18 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const root = @import("root.zig");
-const Value = root.Value;
-const Entry = root.Entry;
+const opts = @import("options.zig");
+const value_mod = @import("Value.zig");
+const Value = value_mod.Value;
+const Entry = value_mod.Entry;
 
-pub fn render(allocator: Allocator, value: Value, options: root.OutputOptions) root.Error![]const u8 {
+pub fn render(allocator: Allocator, value: Value, options: opts.OutputOptions) opts.Error![]const u8 {
     var out: std.io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
     renderValue(allocator, &out.writer, value, 0, options, false) catch return error.OutOfMemory;
     return out.toOwnedSlice() catch return error.OutOfMemory;
 }
 
-fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, indent_level: usize, options: root.OutputOptions, inline_first: bool) !void {
+fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, indent_level: usize, options: opts.OutputOptions, inline_first: bool) !void {
     switch (value) {
         .string => |s| try renderString(writer, s),
         .integer => |i| try writer.print("{d}", .{i}),
