@@ -25,6 +25,8 @@ anchors: std.StringHashMap(Value),
 tag_handles: std.StringHashMap([]const u8),
 last_scalar_multiline: bool,
 seen_yaml_directive: bool,
+block_scan_limit: ?usize,
+node_anchored_result: bool,
 
 /// Create a new parser for the given input with the specified options.
 pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
@@ -38,6 +40,8 @@ pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions)
         .tag_handles = std.StringHashMap([]const u8).init(allocator),
         .last_scalar_multiline = false,
         .seen_yaml_directive = false,
+        .block_scan_limit = null,
+        .node_anchored_result = false,
     };
 }
 
@@ -58,6 +62,13 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
         self.pos += 3;
         self.skipInlineSpace();
         if (!self.atEnd() and self.peek() == '#') self.skipToEndOfLine();
+        if (!self.atEnd() and !self.atEndOfLine()) {
+            if (self.hasInlineContent()) self.block_scan_limit = self.findLineEnd();
+            const val = try self.parseNode(0);
+            self.block_scan_limit = null;
+            try self.rejectOrphanContent();
+            return val;
+        }
         self.skipNewline();
     }
 
@@ -104,7 +115,9 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
                     docs.append(self.allocator, val) catch return error.OutOfMemory;
                 }
             } else if (!self.atEnd() and !self.atEndOfLine()) {
+                if (self.hasInlineContent()) self.block_scan_limit = self.findLineEnd();
                 const val = try self.parseNode(0);
+                self.block_scan_limit = null;
                 try self.rejectOrphanContent();
                 docs.append(self.allocator, val) catch return error.OutOfMemory;
             } else {
@@ -181,14 +194,22 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
     if (self.atEnd() or self.atEndOfLine()) {
         self.skipNewline();
         self.skipWhitespaceAndComments();
-        if (self.atEnd()) return self.applyTagAndAnchor(.{ .null_val = {} }, tag, anchor_name);
+        if (self.atEnd()) {
+            self.node_anchored_result = (anchor_name != null);
+            return self.applyTagAndAnchor(.{ .null_val = {} }, tag, anchor_name);
+        }
         const next_col = self.currentCol();
         if (tag != null or anchor_name != null) {
+            self.node_anchored_result = false;
             const cont_result = try self.parseNode(next_col);
+            if (anchor_name != null and self.node_anchored_result)
+                return self.fail("UnexpectedCharacter");
+            self.node_anchored_result = (anchor_name != null);
             return self.applyTagAndAnchor(cont_result, tag, anchor_name);
         }
         if (next_col <= col) return .{ .null_val = {} };
         const result = try self.parseNode(next_col);
+        self.node_anchored_result = false;
         return self.applyTagAndAnchor(result, tag, anchor_name);
     }
 
@@ -206,6 +227,7 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             result = try self.parseBlockMappingFromFirstKey(result, col);
         }
     } else if (c == '[') {
+        const flow_start = self.pos;
         result = try self.parseFlowSequence(min_col);
         try self.rejectTrailingFlowContent();
         self.skipInlineSpace();
@@ -213,11 +235,13 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
+            if (self.crossedLine(flow_start)) return self.fail("UnexpectedCharacter");
             if (tag) |t| { result = try self.applyTag(result, t); tag = null; }
             if (anchor_name) |name| { self.anchors.put(name, result) catch return error.OutOfMemory; anchor_name = null; }
             result = try self.parseBlockMappingFromFirstKey(result, col);
         }
     } else if (c == '{') {
+        const flow_start = self.pos;
         result = try self.parseFlowMapping(min_col);
         try self.rejectTrailingFlowContent();
         self.skipInlineSpace();
@@ -225,6 +249,7 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
+            if (self.crossedLine(flow_start)) return self.fail("UnexpectedCharacter");
             if (tag) |t| { result = try self.applyTag(result, t); tag = null; }
             if (anchor_name) |name| { self.anchors.put(name, result) catch return error.OutOfMemory; anchor_name = null; }
             result = try self.parseBlockMappingFromFirstKey(result, col);
@@ -272,16 +297,22 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
         result = try self.parseBlockSequence(col);
     } else if (c == '<' and self.pos + 1 < self.input.len and self.input[self.pos + 1] == '<') {
         result = try self.parseBlockMapping(col);
+    } else if (c == '%' or c == '@' or c == '`') {
+        return self.fail("UnexpectedCharacter");
     } else {
         const line_start = self.pos;
         const line = self.readToEndOfUnquotedLine();
         if (findKeyValueSep(line) != null) {
             self.pos = line_start;
+            if (self.block_scan_limit != null and (tag != null or anchor_name != null))
+                return self.fail("UnexpectedCharacter");
             if (tag != null or anchor_name != null) {
                 var key = try self.parseBlockMappingKey();
                 if (tag) |t| key = try self.applyTag(key, t);
                 if (anchor_name) |name| self.anchors.put(name, key) catch return error.OutOfMemory;
-                return self.parseBlockMappingFromFirstKey(key, col);
+                const mapping = try self.parseBlockMappingFromFirstKey(key, col);
+                self.node_anchored_result = false;
+                return mapping;
             }
             result = try self.parseBlockMapping(col);
         } else {
@@ -290,6 +321,7 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
         }
     }
 
+    self.node_anchored_result = (anchor_name != null);
     return self.applyTagAndAnchor(result, tag, anchor_name);
 }
 
@@ -369,7 +401,7 @@ fn parseBlockMappingFromFirstKey(self: *Parser, first_key: Value, indent: usize)
 
     self.pos += 1; // skip ':'
     self.skipInlineSpace();
-    const first_value = try self.parseBlockMappingValue(indent);
+    const first_value = try self.parseBlockMappingValue(indent, false);
     entries.append(self.allocator, .{ .key = first_key, .value = first_value }) catch return error.OutOfMemory;
 
     try self.parseRemainingMappingEntries(&entries, indent);
@@ -382,6 +414,7 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
+        if (self.block_scan_limit) |lim| if (self.pos >= lim) break;
 
         try self.checkNoTabIndent();
         const col = self.currentCol();
@@ -399,7 +432,7 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
                 self.pos += 1;
                 if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
                 self.skipInlineSpace();
-                value = try self.parseBlockMappingValue(indent);
+                value = try self.parseBlockMappingValue(indent, true);
             }
             try self.checkDuplicateKey(entries.items, key);
             entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
@@ -444,7 +477,7 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
         self.skipInlineSpace();
         try self.consumeColon();
         self.skipInlineSpace();
-        const value = try self.parseBlockMappingValue(indent);
+        const value = try self.parseBlockMappingValue(indent, false);
 
         try self.checkDuplicateKey(entries.items, key);
         entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
@@ -458,6 +491,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
+        if (self.block_scan_limit) |lim| if (self.pos >= lim) break;
 
         try self.checkNoTabIndent();
         const col = self.currentCol();
@@ -472,7 +506,11 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
             if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
 
             self.depth += 1;
-            const key = try self.parseNode(indent + 1);
+            const peek_pos = self.pos;
+            self.skipWhitespaceAndComments();
+            const block_out_seq = !self.atEnd() and self.currentCol() == indent and self.isBlockSequenceIndicator();
+            self.pos = peek_pos;
+            const key = try self.parseNode(if (block_out_seq) indent else indent + 1);
             self.depth -= 1;
 
             self.skipBlankAndCommentLines();
@@ -482,7 +520,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
                 if (!self.atEnd() and self.peek() == '\t') return self.fail("TabInIndentation");
                 if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
                 self.skipInlineSpace();
-                value = try self.parseBlockMappingValue(indent);
+                value = try self.parseBlockMappingValue(indent, true);
             }
 
             try self.checkDuplicateKey(entries.items, key);
@@ -491,7 +529,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
             const key = try self.parseBlockMappingKey();
             try self.consumeColon();
             self.skipInlineSpace();
-            const value = try self.parseBlockMappingValue(indent);
+            const value = try self.parseBlockMappingValue(indent, false);
             try self.checkDuplicateKey(entries.items, key);
             entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
         } else {
@@ -525,7 +563,7 @@ fn parseMergeValue(self: *Parser, entries: *std.ArrayList(Entry), indent: usize)
         const val = try self.parseAlias();
         try self.applyMerge(entries, val);
     } else {
-        const val = try self.parseBlockMappingValue(indent);
+        const val = try self.parseBlockMappingValue(indent, false);
         try self.applyMerge(entries, val);
     }
 
@@ -602,7 +640,7 @@ fn checkDuplicateKey(self: *Parser, items: []const Entry, key: Value) opts.Error
     }
 }
 
-fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
+fn parseBlockMappingValue(self: *Parser, map_indent: usize, allow_compact: bool) opts.Error!Value {
     if (self.atEnd() or self.atEndOfLine()) {
         self.skipNewline();
         self.skipBlankAndCommentLines();
@@ -666,19 +704,21 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
                 self.anchors.put(name, .{ .null_val = {} }) catch return error.OutOfMemory;
                 return .{ .null_val = {} };
             }
+            self.node_anchored_result = false;
             const val = try self.parseNode(map_indent + 1);
+            if (self.node_anchored_result) return self.fail("UnexpectedCharacter");
             self.anchors.put(name, val) catch return error.OutOfMemory;
             return val;
         }
         if (!self.atEnd() and self.peek() == '*') return self.fail("UnexpectedCharacter");
-        const val = try self.parseBlockMappingValue(map_indent);
+        const val = try self.parseBlockMappingValue(map_indent, allow_compact);
         self.anchors.put(name, val) catch return error.OutOfMemory;
         return val;
     }
     if (c == '!') {
         const t = try self.parseTag();
         self.skipInlineSpace();
-        const val = try self.parseBlockMappingValue(map_indent);
+        const val = try self.parseBlockMappingValue(map_indent, allow_compact);
         return self.applyTag(val, t);
     }
     if (c == '"') {
@@ -691,8 +731,17 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
         try self.rejectTrailingQuotedContent();
         return .{ .string = str };
     }
-    if (self.isBlockSequenceIndicator()) return self.parseBlockSequence(self.currentCol());
+    if (self.isBlockSequenceIndicator()) {
+        if (!allow_compact) return self.fail("UnexpectedCharacter");
+        return self.parseBlockSequence(self.currentCol());
+    }
 
+    if (!allow_compact) {
+        const peek_pos = self.pos;
+        const peek_line = self.readToEndOfUnquotedLine();
+        self.pos = peek_pos;
+        if (findKeyValueSep(peek_line) != null) return self.fail("UnexpectedCharacter");
+    }
     return self.parsePlainScalar(map_indent + 1);
 }
 
@@ -705,6 +754,7 @@ fn parseBlockSequence(self: *Parser, indent: usize) opts.Error!Value {
         self.skipBlankAndCommentLines();
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
+        if (self.block_scan_limit) |lim| if (self.pos >= lim) break;
 
         try self.checkNoTabIndent();
         const col = self.currentCol();
@@ -1639,6 +1689,38 @@ fn atEndOfLine(self: *const Parser) bool {
     return self.input[self.pos] == '\n' or self.input[self.pos] == '\r';
 }
 
+/// Check if the current position has actual node content (not just
+/// anchors/tags) before the end of line. Used to determine whether
+/// block structures starting on the `---` line should be limited.
+fn hasInlineContent(self: *const Parser) bool {
+    var scan = self.pos;
+    while (scan < self.input.len) {
+        const c = self.input[scan];
+        if (c == '&' or c == '!') {
+            scan += 1;
+            while (scan < self.input.len and self.input[scan] != ' ' and
+                self.input[scan] != '\t' and self.input[scan] != '\n' and
+                self.input[scan] != '\r') scan += 1;
+            while (scan < self.input.len and
+                (self.input[scan] == ' ' or self.input[scan] == '\t')) scan += 1;
+        } else break;
+    }
+    return scan < self.input.len and self.input[scan] != '\n' and
+        self.input[scan] != '\r' and self.input[scan] != '#';
+}
+
+fn findLineEnd(self: *const Parser) usize {
+    var p = self.pos;
+    while (p < self.input.len and self.input[p] != '\n' and self.input[p] != '\r') p += 1;
+    return p;
+}
+
+fn crossedLine(self: *const Parser, start: usize) bool {
+    const span = self.input[start..self.pos];
+    return std.mem.indexOfScalar(u8, span, '\n') != null or
+        std.mem.indexOfScalar(u8, span, '\r') != null;
+}
+
 fn isFlowIndicatorNext(self: *const Parser) bool {
     if (self.pos + 1 >= self.input.len) return true;
     const next = self.input[self.pos + 1];
@@ -1701,9 +1783,7 @@ fn rejectOrphanContent(self: *Parser) opts.Error!void {
     self.skipWhitespaceAndComments();
     if (self.atEnd()) return;
     if (self.isDocumentMarker()) return;
-    if (self.currentCol() > 0) return self.fail("UnexpectedCharacter");
-    const c = self.peek();
-    if (c == '&' or c == '!') return self.fail("UnexpectedCharacter");
+    return self.fail("UnexpectedCharacter");
 }
 
 /// Reject flow continuation lines indented below the required level.

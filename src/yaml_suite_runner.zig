@@ -7,49 +7,12 @@ const mem = std.mem;
 const Allocator = std.mem.Allocator;
 const comb = @import("root.zig");
 
-const ExpectedFailure = struct {
-    id: []const u8,
-    reason: FailureReason,
-};
-
-const FailureReason = enum {
-    too_permissive,
-    parse_error,
-    json_mismatch,
-    multi_doc_json,
-};
-
-const expected_failures: []const ExpectedFailure = &.{
-    // Parser accepts invalid YAML that should be rejected (too permissive)
-    .{ .id = "4JVG", .reason = .too_permissive },
-    .{ .id = "5U3A", .reason = .too_permissive },
-    .{ .id = "9KBC", .reason = .too_permissive },
-    .{ .id = "BD7L", .reason = .too_permissive },
-    .{ .id = "BS4K", .reason = .too_permissive },
-    .{ .id = "C2SP", .reason = .too_permissive },
-    .{ .id = "CXX2", .reason = .too_permissive },
-    .{ .id = "KS4U", .reason = .too_permissive },
-    .{ .id = "MUS6/01", .reason = .too_permissive },
-    .{ .id = "TD5N", .reason = .too_permissive },
-    .{ .id = "ZCZ6", .reason = .too_permissive },
-};
-
-fn isExpectedFailure(id: []const u8) ?FailureReason {
-    for (expected_failures) |ef| {
-        if (mem.eql(u8, ef.id, id)) return ef.reason;
-    }
-    return null;
-}
-
 const TestResults = struct {
     passed: usize = 0,
-    expected_failures: usize = 0,
-    unexpected_failures: usize = 0,
-    unexpected_passes: usize = 0,
+    failed: usize = 0,
 
     fn total(self: TestResults) usize {
-        return self.passed + self.expected_failures +
-            self.unexpected_failures + self.unexpected_passes;
+        return self.passed + self.failed;
     }
 };
 
@@ -127,7 +90,6 @@ fn finishCase(
     json_buf: *std.ArrayList(u8),
     is_error: bool,
 ) !void {
-    // Restore the trailing newline stripped by line-by-line parsing
     try yaml_buf.append(alloc, '\n');
     const yaml = try alloc.dupe(u8, yaml_buf.items);
     const json = if (json_buf.items.len > 0) try alloc.dupe(u8, json_buf.items) else null;
@@ -147,22 +109,11 @@ fn extractId(line: []const u8) []const u8 {
 }
 
 fn recordResult(results: *TestResults, test_id: []const u8, failed: bool, detail: []const u8) void {
-    if (!failed) {
-        if (isExpectedFailure(test_id)) |reason| {
-            results.unexpected_passes += 1;
-            std.debug.print("  UNEXPECTED PASS: {s} (remove from expected_failures, was {s})\n", .{
-                test_id, @tagName(reason),
-            });
-        } else {
-            results.passed += 1;
-        }
+    if (failed) {
+        results.failed += 1;
+        std.debug.print("  FAIL: {s}: {s}\n", .{ test_id, detail });
     } else {
-        if (isExpectedFailure(test_id) != null) {
-            results.expected_failures += 1;
-        } else {
-            results.unexpected_failures += 1;
-            std.debug.print("  UNEXPECTED FAIL: {s}: {s}\n", .{ test_id, detail });
-        }
+        results.passed += 1;
     }
 }
 
@@ -197,7 +148,6 @@ fn runSingleCase(
         return;
     };
 
-    // Try single-document comparison first
     if (std.json.parseFromSlice(std.json.Value, allocator, json_expected, .{})) |json_parsed| {
         defer json_parsed.deinit();
 
@@ -215,7 +165,6 @@ fn runSingleCase(
         return;
     } else |_| {}
 
-    // Single JSON parse failed -- try multi-document comparison
     runMultiDocCase(allocator, tc, json_expected, results);
 }
 
@@ -318,7 +267,6 @@ fn findJsonValueEnd(json: []const u8) ?usize {
             return i;
         },
         else => {
-            // Number, true, false, null
             while (i < json.len and json[i] != '\n' and json[i] != '\r' and
                 json[i] != ',' and json[i] != '}' and json[i] != ']') : (i += 1)
             {}
@@ -392,21 +340,11 @@ test "YAML Test Suite conformance" {
         }
     }
 
-    std.debug.print("\n  YAML Test Suite: {d} passed, {d} expected failures, {d} unexpected ({d} total)\n", .{
+    std.debug.print("\n  YAML Test Suite: {d} passed, {d} failed ({d} total)\n\n", .{
         total.passed,
-        total.expected_failures,
-        total.unexpected_failures + total.unexpected_passes,
+        total.failed,
         total.total(),
     });
 
-    if (total.unexpected_failures > 0 or total.unexpected_passes > 0) {
-        std.debug.print("  ({d} unexpected failures, {d} unexpected passes)\n", .{
-            total.unexpected_failures, total.unexpected_passes,
-        });
-    }
-
-    std.debug.print("\n", .{});
-
-    try std.testing.expectEqual(@as(usize, 0), total.unexpected_failures);
-    try std.testing.expectEqual(@as(usize, 0), total.unexpected_passes);
+    try std.testing.expectEqual(@as(usize, 0), total.failed);
 }
