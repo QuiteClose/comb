@@ -69,6 +69,7 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
 pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
     self.skipBom();
     var docs: std.ArrayList(Value) = .empty;
+    var had_directives = false;
 
     while (true) {
         self.skipWhitespaceAndComments();
@@ -76,7 +77,8 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
 
         if (self.isDocumentStartMarker()) {
             self.anchors.clearRetainingCapacity();
-            self.tag_handles.clearRetainingCapacity();
+            if (!had_directives) self.tag_handles.clearRetainingCapacity();
+            had_directives = false;
             self.pos += 3;
             self.skipInlineSpace();
             if (!self.atEnd() and self.peek() == '#') self.skipToEndOfLine();
@@ -103,6 +105,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
             self.skipNewline();
         } else if (self.startsWith("%")) {
             self.parseDirective();
+            had_directives = true;
         } else {
             const val = try self.parseNode(0);
             try self.rejectOrphanContent();
@@ -137,12 +140,19 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
     while (!self.atEnd()) {
         const c = self.peek();
         if (c == '&') {
+            if (anchor_name != null) return self.fail("UnexpectedCharacter");
             anchor_name = try self.parseAnchorDef();
             self.skipInlineSpace();
         } else if (c == '!') {
+            if (tag != null) return self.fail("UnexpectedCharacter");
             tag = try self.parseTag();
             self.skipInlineSpace();
         } else break;
+    }
+
+    if ((tag != null or anchor_name != null) and !self.atEnd() and !self.atEndOfLine()) {
+        if (self.pos > 0 and self.input[self.pos - 1] != ' ' and self.input[self.pos - 1] != '\t')
+            return self.fail("UnexpectedCharacter");
     }
 
     if (!self.atEnd() and self.peek() == '#') {
@@ -166,6 +176,7 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
     var result: Value = undefined;
 
     if (c == '*') {
+        if (anchor_name != null) return self.fail("UnexpectedCharacter");
         result = try self.parseAlias();
         self.skipInlineSpace();
         if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
@@ -391,15 +402,18 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
         var key_tag: ?[]const u8 = null;
         while (!self.atEnd()) {
             if (self.peek() == '&') {
+                if (key_anchor != null) return self.fail("UnexpectedCharacter");
                 key_anchor = try self.parseAnchorDef();
                 self.skipInlineSpace();
             } else if (self.peek() == '!') {
+                if (key_tag != null) return self.fail("UnexpectedCharacter");
                 key_tag = try self.parseTag();
                 self.skipInlineSpace();
             } else break;
         }
         var key: Value = undefined;
         if (!self.atEnd() and self.peek() == '*') {
+            if (key_anchor != null) return self.fail("UnexpectedCharacter");
             key = try self.parseAlias();
             self.skipInlineSpace();
         } else {
@@ -636,6 +650,7 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
             self.anchors.put(name, val) catch return error.OutOfMemory;
             return val;
         }
+        if (!self.atEnd() and self.peek() == '*') return self.fail("UnexpectedCharacter");
         const val = try self.parseBlockMappingValue(map_indent);
         self.anchors.put(name, val) catch return error.OutOfMemory;
         return val;
@@ -1504,7 +1519,8 @@ fn parseTag(self: *Parser) opts.Error![]const u8 {
     if (self.pos < self.input.len and self.input[self.pos] == '!') self.pos += 1;
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
-        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == ',' or c == ']' or c == '}') break;
+        if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or
+            c == ',' or c == '[' or c == ']' or c == '{' or c == '}') break;
         self.pos += 1;
     }
     const tag_text = self.input[start..self.pos];
@@ -1514,6 +1530,18 @@ fn parseTag(self: *Parser) opts.Error![]const u8 {
             const default_ns = "tag:yaml.org,2002:";
             if (!std.mem.eql(u8, prefix, default_ns)) {
                 const suffix = tag_text[2..];
+                const resolved = self.allocator.alloc(u8, prefix.len + suffix.len) catch return error.OutOfMemory;
+                @memcpy(resolved[0..prefix.len], prefix);
+                @memcpy(resolved[prefix.len..], suffix);
+                return resolved;
+            }
+        }
+    } else if (tag_text.len > 1 and tag_text[0] == '!') {
+        if (std.mem.indexOfScalar(u8, tag_text[1..], '!')) |end| {
+            const handle = tag_text[0 .. end + 2];
+            if (!std.mem.eql(u8, handle, "!!")) {
+                const prefix = self.tag_handles.get(handle) orelse return self.fail("InvalidTag");
+                const suffix = tag_text[end + 2 ..];
                 const resolved = self.allocator.alloc(u8, prefix.len + suffix.len) catch return error.OutOfMemory;
                 @memcpy(resolved[0..prefix.len], prefix);
                 @memcpy(resolved[prefix.len..], suffix);
@@ -1619,6 +1647,8 @@ fn rejectOrphanContent(self: *Parser) opts.Error!void {
     if (self.atEnd()) return;
     if (self.isDocumentMarker()) return;
     if (self.currentCol() > 0) return self.fail("UnexpectedCharacter");
+    const c = self.peek();
+    if (c == '&' or c == '!') return self.fail("UnexpectedCharacter");
 }
 
 /// Reject flow continuation lines indented below the required level.

@@ -36,20 +36,14 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "C2SP", .reason = .too_permissive },
     .{ .id = "CXX2", .reason = .too_permissive },
     .{ .id = "EB22", .reason = .too_permissive },
-    .{ .id = "GT5M", .reason = .too_permissive },
     .{ .id = "H7TQ", .reason = .too_permissive },
     .{ .id = "KS4U", .reason = .too_permissive },
-    .{ .id = "LHL4", .reason = .too_permissive },
     .{ .id = "MUS6/00", .reason = .too_permissive },
     .{ .id = "MUS6/01", .reason = .too_permissive },
-    .{ .id = "QLJ7", .reason = .too_permissive },
     .{ .id = "S4GJ", .reason = .too_permissive },
     .{ .id = "S98Z", .reason = .too_permissive },
     .{ .id = "SF5V", .reason = .too_permissive },
-    .{ .id = "SR86", .reason = .too_permissive },
-    .{ .id = "SU74", .reason = .too_permissive },
     .{ .id = "TD5N", .reason = .too_permissive },
-    .{ .id = "U99R", .reason = .too_permissive },
     .{ .id = "W9L4", .reason = .too_permissive },
     .{ .id = "X4QW", .reason = .too_permissive },
     .{ .id = "ZCZ6", .reason = .too_permissive },
@@ -195,7 +189,13 @@ fn runSingleCase(
     if (tc.is_error) {
         if (comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins })) |*p| {
             p.deinit();
-            recordResult(results, tc.id, true, "expected error, parsed OK");
+            if (comb.parseAll(allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins })) |mp| {
+                var m = mp;
+                m.deinit();
+                recordResult(results, tc.id, true, "expected error, parsed OK");
+            } else |_| {
+                recordResult(results, tc.id, false, "");
+            }
         } else |_| {
             recordResult(results, tc.id, false, "");
         }
