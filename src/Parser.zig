@@ -1225,17 +1225,13 @@ fn parsePlainScalar(self: *Parser, min_col: usize) opts.Error!Value {
     if (first_line.len > 0) parts.append(self.allocator, .{ .text = first_line, .blank_before = false }) catch return error.OutOfMemory;
     self.skipNewline();
 
-    while (!self.atEnd()) {
+    outer: while (!self.atEnd()) {
         const saved_pos = self.pos;
         var saw_blank = false;
         while (!self.atEnd()) {
             self.skipInlineSpace();
             if (self.atEnd()) break;
-            if (self.input[self.pos] == '#') {
-                self.skipToEndOfLine();
-                self.skipNewline();
-                continue;
-            }
+            if (self.input[self.pos] == '#') break :outer;
             if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') {
                 saw_blank = true;
                 self.skipNewline();
@@ -1248,8 +1244,7 @@ fn parsePlainScalar(self: *Parser, min_col: usize) opts.Error!Value {
         const col = self.currentCol();
         if (col < min_col) break;
 
-        const line = self.readToEndOfUnquotedLine();
-        const trimmed = std.mem.trimRight(u8, line, " \t");
+        const trimmed = self.readValueLine();
         if (findKeyValueSep(trimmed) != null) {
             self.pos = saved_pos;
             break;
