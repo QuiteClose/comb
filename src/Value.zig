@@ -64,12 +64,7 @@ pub const Value = union(enum) {
                 }
                 return .{ .object = map };
             },
-            .binary => |data| {
-                const encoded_len = std.base64.standard.Encoder.calcSize(data.len);
-                const encoded = try allocator.alloc(u8, encoded_len);
-                _ = std.base64.standard.Encoder.encode(encoded, data);
-                return .{ .string = encoded };
-            },
+            .binary => |data| .{ .string = data },
             .tagged => |t| t.value.toStdJsonValue(allocator),
         };
     }
@@ -236,10 +231,8 @@ test "toStdJsonValue: object" {
     try std.testing.expectEqual(@as(i64, 30), m.get("age").?.integer);
 }
 
-test "toStdJsonValue: binary becomes base64 string" {
-    const alloc = std.testing.allocator;
-    const result = try (Value{ .binary = "hello" }).toStdJsonValue(alloc);
-    defer alloc.free(result.string);
+test "toStdJsonValue: binary returns original text" {
+    const result = try (Value{ .binary = "aGVsbG8=" }).toStdJsonValue(std.testing.allocator);
     try std.testing.expectEqualStrings("aGVsbG8=", result.string);
 }
 

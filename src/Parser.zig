@@ -22,6 +22,7 @@ allocator: Allocator,
 options: opts.ParseOptions,
 depth: u16,
 anchors: std.StringHashMap(Value),
+tag_handles: std.StringHashMap([]const u8),
 
 /// Create a new parser for the given input with the specified options.
 pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
@@ -32,6 +33,7 @@ pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions)
         .options = options,
         .depth = 0,
         .anchors = std.StringHashMap(Value).init(allocator),
+        .tag_handles = std.StringHashMap([]const u8).init(allocator),
     };
 }
 
@@ -41,7 +43,7 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
     self.skipWhitespaceAndComments();
 
     while (!self.atEnd() and self.startsWith("%")) {
-        self.skipDirective();
+        self.parseDirective();
         self.skipWhitespaceAndComments();
     }
 
@@ -70,6 +72,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
 
         if (self.isDocumentStartMarker()) {
             self.anchors.clearRetainingCapacity();
+            self.tag_handles.clearRetainingCapacity();
             self.pos += 3;
             self.skipInlineSpace();
             if (!self.atEnd() and self.peek() == '#') self.skipToEndOfLine();
@@ -93,7 +96,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
             self.skipToEndOfLine();
             self.skipNewline();
         } else if (self.startsWith("%")) {
-            self.skipDirective();
+            self.parseDirective();
         } else {
             const val = try self.parseNode(0);
             docs.append(self.allocator, val) catch return error.OutOfMemory;
@@ -272,19 +275,7 @@ fn applyTag(self: *Parser, value: Value, tag: []const u8) opts.Error!Value {
         return .{ .null_val = {} };
     } else if (std.mem.eql(u8, tag, "!!binary")) {
         return switch (value) {
-            .string => |s| blk: {
-                var clean: std.ArrayList(u8) = .empty;
-                defer clean.deinit(self.allocator);
-                for (s) |ch| {
-                    if (ch != ' ' and ch != '\t' and ch != '\n' and ch != '\r') {
-                        clean.append(self.allocator, ch) catch return error.OutOfMemory;
-                    }
-                }
-                const size = std.base64.standard.Decoder.calcSizeForSlice(clean.items) catch return self.fail("InvalidNumber");
-                const buf = self.allocator.alloc(u8, size) catch return error.OutOfMemory;
-                std.base64.standard.Decoder.decode(buf, clean.items) catch return self.fail("InvalidNumber");
-                break :blk .{ .binary = buf };
-            },
+            .string => |s| .{ .binary = s },
             else => value,
         };
     } else if (std.mem.eql(u8, tag, "!!seq") or std.mem.eql(u8, tag, "!!map") or std.mem.eql(u8, tag, "!!set")) {
@@ -334,6 +325,7 @@ fn parseRemainingMappingEntries(self: *Parser, entries: *std.ArrayList(Entry), i
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
 
+        try self.checkNoTabIndent();
         const col = self.currentCol();
         if (col != indent) break;
 
@@ -406,13 +398,16 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
 
+        try self.checkNoTabIndent();
         const col = self.currentCol();
         if (col != indent) break;
 
         if (self.peek() == '?' and (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+            self.input[self.pos + 1] == '\t' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
             self.pos += 1;
+            if (!self.atEnd() and self.peek() == '\t') return self.fail("TabInIndentation");
             if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
 
             self.depth += 1;
@@ -423,6 +418,7 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
             var value: Value = .{ .null_val = {} };
             if (!self.atEnd() and self.currentCol() == indent and self.peek() == ':') {
                 self.pos += 1;
+                if (!self.atEnd() and self.peek() == '\t') return self.fail("TabInIndentation");
                 if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
                 self.skipInlineSpace();
                 value = try self.parseBlockMappingValue(indent);
@@ -609,6 +605,7 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
     }
     if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
     if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (self.isBlockSequenceIndicator()) return self.parseBlockSequence(self.currentCol());
 
     return self.parsePlainScalar(map_indent + 1);
 }
@@ -623,6 +620,7 @@ fn parseBlockSequence(self: *Parser, indent: usize) opts.Error!Value {
         if (self.atEnd()) break;
         if (self.isDocumentMarker()) break;
 
+        try self.checkNoTabIndent();
         const col = self.currentCol();
         if (col != indent) break;
         if (self.peek() != '-') break;
@@ -634,7 +632,9 @@ fn parseBlockSequence(self: *Parser, indent: usize) opts.Error!Value {
         }
 
         self.pos += 1;
-        if (!self.atEnd() and (self.peek() == ' ' or self.peek() == '\t')) self.pos += 1;
+        try self.rejectTabBeforeBlockIndicator();
+        if (!self.atEnd() and self.peek() == ' ') self.pos += 1;
+        try self.rejectTabBeforeBlockIndicator();
 
         self.depth += 1;
         defer self.depth -= 1;
@@ -667,7 +667,7 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
 
     var items: std.ArrayList(Value) = .empty;
 
-    self.skipFlowWhitespace();
+    try self.skipFlowWhitespace();
 
     if (!self.atEnd() and self.peek() == ']') {
         self.pos += 1;
@@ -675,7 +675,7 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
     }
 
     while (!self.atEnd()) {
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         if (self.atEnd()) return self.fail("UnclosedFlowSequence");
         if (self.peek() == ']') {
             self.pos += 1;
@@ -685,13 +685,13 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
         // Explicit key with ? creates a mapping entry in the sequence
         if (self.peek() == '?' and self.isFlowIndicatorNext()) {
             self.pos += 1;
-            self.skipFlowWhitespace();
+            try self.skipFlowWhitespace();
             const key = try self.parseFlowValue();
-            self.skipFlowWhitespace();
+            try self.skipFlowWhitespace();
             var value: Value = .{ .null_val = {} };
             if (!self.atEnd() and self.peek() == ':') {
                 self.pos += 1;
-                self.skipFlowWhitespace();
+                try self.skipFlowWhitespace();
                 if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
                     value = try self.parseFlowValue();
             }
@@ -701,10 +701,10 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
         } else {
             const val = try self.parseFlowValue();
 
-            self.skipFlowWhitespace();
+            try self.skipFlowWhitespace();
             if (!self.atEnd() and self.peek() == ':' and self.isFlowIndicatorNext()) {
                 self.pos += 1;
-                self.skipFlowWhitespace();
+                try self.skipFlowWhitespace();
                 const map_val = if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
                     try self.parseFlowValue()
                 else
@@ -717,7 +717,7 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
             }
         }
 
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         if (!self.atEnd() and self.peek() == ',') {
             self.pos += 1;
         }
@@ -734,7 +734,7 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
 
     var entries: std.ArrayList(Entry) = .empty;
 
-    self.skipFlowWhitespace();
+    try self.skipFlowWhitespace();
 
     if (!self.atEnd() and self.peek() == '}') {
         self.pos += 1;
@@ -742,7 +742,7 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
     }
 
     while (!self.atEnd()) {
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         if (self.atEnd()) return self.fail("UnclosedFlowMapping");
         if (self.peek() == '}') {
             self.pos += 1;
@@ -752,17 +752,17 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
         var key: Value = undefined;
         if (self.peek() == '?' and self.isFlowIndicatorNext()) {
             self.pos += 1;
-            self.skipFlowWhitespace();
+            try self.skipFlowWhitespace();
             key = try self.parseFlowValue();
         } else {
             key = try self.parseFlowKey();
         }
 
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         var value: Value = .{ .null_val = {} };
         if (!self.atEnd() and self.peek() == ':') {
             self.pos += 1;
-            self.skipFlowWhitespace();
+            try self.skipFlowWhitespace();
             if (!self.atEnd() and self.peek() != ',' and self.peek() != '}') {
                 value = try self.parseFlowValue();
             }
@@ -771,7 +771,7 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
         try self.checkDuplicateKey(entries.items, key);
         entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
 
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         if (!self.atEnd() and self.peek() == ',') {
             self.pos += 1;
         }
@@ -781,7 +781,7 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
 }
 
 fn parseFlowValue(self: *Parser) opts.Error!Value {
-    self.skipFlowWhitespace();
+    try self.skipFlowWhitespace();
     if (self.atEnd()) return .{ .null_val = {} };
 
     const c = self.peek();
@@ -792,14 +792,14 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
     if (c == '*') return self.parseAlias();
     if (c == '&') {
         const name = try self.parseAnchorDef();
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         const val = try self.parseFlowValue();
         self.anchors.put(name, val) catch return error.OutOfMemory;
         return val;
     }
     if (c == '!') {
         const t = try self.parseTag();
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         const val = try self.parseFlowValue();
         return self.applyTag(val, t);
     }
@@ -859,7 +859,7 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
     if (fc == '*') return self.parseAlias();
     if (fc == '!') {
         const t = try self.parseTag();
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         if (self.atEnd() or self.peek() == ':' or self.peek() == ',' or self.peek() == '}')
             return self.applyTag(.{ .null_val = {} }, t);
         const val = try self.parseFlowKey();
@@ -867,7 +867,7 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
     }
     if (fc == '&') {
         const name = try self.parseAnchorDef();
-        self.skipFlowWhitespace();
+        try self.skipFlowWhitespace();
         const val = try self.parseFlowKey();
         self.anchors.put(name, val) catch return error.OutOfMemory;
         return val;
@@ -965,6 +965,9 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
         const line_start = self.pos;
         const line_end = self.findEndOfLine();
         const line = self.input[line_start..line_end];
+
+        if (line.len > 0 and line[0] == '\t')
+            return self.fail("TabInIndentation");
 
         const stripped = std.mem.trimLeft(u8, line, " ");
         if (stripped.len == 0) {
@@ -1172,6 +1175,7 @@ fn readValueLine(self: *Parser) []const u8 {
 
 fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '"') return self.fail("UnclosedQuote");
+    const quote_col = self.currentCol();
     self.pos += 1;
 
     var result: std.ArrayList(u8) = .empty;
@@ -1232,6 +1236,8 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
             trailing_literal_ws = 0;
             self.pos += 1;
             if (c == '\r' and self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+            if (quote_col > 0 and self.pos < self.input.len and self.input[self.pos] == '\t' and self.isAtLineStart())
+                return self.fail("TabInIndentation");
             var blank_count: usize = 0;
             while (self.pos < self.input.len) {
                 self.skipInlineSpace();
@@ -1240,6 +1246,8 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
                     blank_count += 1;
                     if (self.input[self.pos] == '\r') self.pos += 1;
                     if (self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+                    if (quote_col > 0 and self.pos < self.input.len and self.input[self.pos] == '\t' and self.isAtLineStart())
+                        return self.fail("TabInIndentation");
                 } else break;
             }
             if (blank_count > 0) {
@@ -1265,6 +1273,7 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
 
 fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '\'') return self.fail("UnclosedQuote");
+    const quote_col = self.currentCol();
     self.pos += 1;
 
     var result: std.ArrayList(u8) = .empty;
@@ -1287,6 +1296,8 @@ fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
             trailing_literal_ws = 0;
             self.pos += 1;
             if (c == '\r' and self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+            if (quote_col > 0 and self.pos < self.input.len and self.input[self.pos] == '\t' and self.isAtLineStart())
+                return self.fail("TabInIndentation");
             var blank_count: usize = 0;
             while (self.pos < self.input.len) {
                 self.skipInlineSpace();
@@ -1295,6 +1306,8 @@ fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
                     blank_count += 1;
                     if (self.input[self.pos] == '\r') self.pos += 1;
                     if (self.pos < self.input.len and self.input[self.pos] == '\n') self.pos += 1;
+                    if (quote_col > 0 and self.pos < self.input.len and self.input[self.pos] == '\t' and self.isAtLineStart())
+                        return self.fail("TabInIndentation");
                 } else break;
             }
             if (blank_count > 0) {
@@ -1401,12 +1414,44 @@ fn parseTag(self: *Parser) opts.Error![]const u8 {
         if (c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == ',' or c == ']' or c == '}') break;
         self.pos += 1;
     }
-    return self.input[start..self.pos];
+    const tag_text = self.input[start..self.pos];
+
+    if (std.mem.startsWith(u8, tag_text, "!!")) {
+        if (self.tag_handles.get("!!")) |prefix| {
+            const default_ns = "tag:yaml.org,2002:";
+            if (!std.mem.eql(u8, prefix, default_ns)) {
+                const suffix = tag_text[2..];
+                const resolved = self.allocator.alloc(u8, prefix.len + suffix.len) catch return error.OutOfMemory;
+                @memcpy(resolved[0..prefix.len], prefix);
+                @memcpy(resolved[prefix.len..], suffix);
+                return resolved;
+            }
+        }
+    }
+
+    return tag_text;
 }
 
 // ── Directives ──────────────────────────────────────────────────────────
 
-fn skipDirective(self: *Parser) void {
+fn parseDirective(self: *Parser) void {
+    if (self.startsWith("%TAG")) {
+        self.pos += 4;
+        self.skipInlineSpace();
+        const handle_start = self.pos;
+        while (self.pos < self.input.len and self.input[self.pos] != ' ' and self.input[self.pos] != '\t')
+            self.pos += 1;
+        const handle = self.input[handle_start..self.pos];
+        self.skipInlineSpace();
+        const prefix_start = self.pos;
+        while (self.pos < self.input.len and self.input[self.pos] != ' ' and
+            self.input[self.pos] != '\t' and self.input[self.pos] != '\n' and
+            self.input[self.pos] != '\r' and self.input[self.pos] != '#')
+            self.pos += 1;
+        const prefix = self.input[prefix_start..self.pos];
+        if (handle.len > 0 and prefix.len > 0)
+            self.tag_handles.put(handle, prefix) catch {};
+    }
     self.skipToEndOfLine();
     self.skipNewline();
 }
@@ -1463,6 +1508,33 @@ fn currentCol(self: *const Parser) usize {
         p -= 1;
     }
     return self.pos - p;
+}
+
+fn checkNoTabIndent(self: *Parser) opts.Error!void {
+    var p = self.pos;
+    while (p > 0 and self.input[p - 1] != '\n' and self.input[p - 1] != '\r') p -= 1;
+    while (p < self.pos) : (p += 1) {
+        if (self.input[p] == '\t') return self.fail("TabInIndentation");
+        if (self.input[p] != ' ') return;
+    }
+}
+
+/// Reject tab only when it precedes another block indicator (-, ?, :).
+/// Allows tab before content like `-\tbaz` or `-\t-1`.
+fn rejectTabBeforeBlockIndicator(self: *Parser) opts.Error!void {
+    if (self.atEnd() or self.peek() != '\t') return;
+    var look = self.pos;
+    while (look < self.input.len and (self.input[look] == ' ' or self.input[look] == '\t')) look += 1;
+    if (look >= self.input.len) return;
+    const next = self.input[look];
+    if (next == '-' or next == '?' or next == ':') {
+        const after = look + 1;
+        if (after >= self.input.len or self.input[after] == ' ' or self.input[after] == '\t' or
+            self.input[after] == '\n' or self.input[after] == '\r')
+        {
+            return self.fail("TabInIndentation");
+        }
+    }
 }
 
 fn startsWith(self: *const Parser, prefix: []const u8) bool {
@@ -1523,15 +1595,28 @@ fn skipBlankAndCommentLines(self: *Parser) void {
     }
 }
 
-fn skipFlowWhitespace(self: *Parser) void {
+fn skipFlowWhitespace(self: *Parser) opts.Error!void {
     while (self.pos < self.input.len) {
         const c = self.input[self.pos];
         if (c == ' ' or c == '\t' or c == '\n' or c == '\r') {
+            if (c == '\t' and self.isAtLineStart()) {
+                var look = self.pos + 1;
+                while (look < self.input.len and (self.input[look] == ' ' or self.input[look] == '\t')) look += 1;
+                if (look < self.input.len) {
+                    const next = self.input[look];
+                    if (next != '\n' and next != '\r' and next != ']' and next != '}')
+                        return self.fail("TabInIndentation");
+                }
+            }
             self.pos += 1;
         } else if (c == '#') {
             self.skipToEndOfLine();
         } else break;
     }
+}
+
+fn isAtLineStart(self: *const Parser) bool {
+    return self.pos == 0 or self.input[self.pos - 1] == '\n' or self.input[self.pos - 1] == '\r';
 }
 
 fn readToEndOfUnquotedLine(self: *Parser) []const u8 {

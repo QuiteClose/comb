@@ -23,7 +23,6 @@ const expected_failures: []const ExpectedFailure = &.{
     // Parser accepts invalid YAML that should be rejected (80 cases)
     .{ .id = "2CMS", .reason = .too_permissive },
     .{ .id = "3HFZ", .reason = .too_permissive },
-    .{ .id = "4EJS", .reason = .too_permissive },
     .{ .id = "4H7K", .reason = .too_permissive },
     .{ .id = "4HVU", .reason = .too_permissive },
     .{ .id = "4JVG", .reason = .too_permissive },
@@ -52,8 +51,6 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "CXX2", .reason = .too_permissive },
     .{ .id = "D49Q", .reason = .too_permissive },
     .{ .id = "DK4H", .reason = .too_permissive },
-    .{ .id = "DK95/01", .reason = .too_permissive },
-    .{ .id = "DK95/06", .reason = .too_permissive },
     .{ .id = "DMG6", .reason = .too_permissive },
     .{ .id = "EB22", .reason = .too_permissive },
     .{ .id = "EW3V", .reason = .too_permissive },
@@ -88,28 +85,11 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "VJP3/00", .reason = .too_permissive },
     .{ .id = "W9L4", .reason = .too_permissive },
     .{ .id = "X4QW", .reason = .too_permissive },
-    .{ .id = "Y79Y/000", .reason = .too_permissive },
-    .{ .id = "Y79Y/003", .reason = .too_permissive },
-    .{ .id = "Y79Y/004", .reason = .too_permissive },
-    .{ .id = "Y79Y/005", .reason = .too_permissive },
-    .{ .id = "Y79Y/006", .reason = .too_permissive },
-    .{ .id = "Y79Y/007", .reason = .too_permissive },
-    .{ .id = "Y79Y/008", .reason = .too_permissive },
-    .{ .id = "Y79Y/009", .reason = .too_permissive },
     .{ .id = "YJV2", .reason = .too_permissive },
     .{ .id = "ZCZ6", .reason = .too_permissive },
     .{ .id = "ZL4Z", .reason = .too_permissive },
     .{ .id = "ZVH3", .reason = .too_permissive },
     .{ .id = "ZXT5", .reason = .too_permissive },
-
-    // Parser rejects valid YAML (2 cases)
-    .{ .id = "P76L", .reason = .parse_error },
-
-    // Parser produces wrong JSON output (11 cases)
-    .{ .id = "565N", .reason = .json_mismatch },
-    .{ .id = "5WE3", .reason = .json_mismatch },
-    .{ .id = "82AN", .reason = .json_mismatch },
-    .{ .id = "A2M4", .reason = .json_mismatch },
 
 };
 

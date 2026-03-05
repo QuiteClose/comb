@@ -92,17 +92,18 @@ fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, inden
         },
         .binary => |data| {
             try writer.writeAll("!!binary |\n");
-            const encoder = std.base64.standard.Encoder;
-            const encoded_len = encoder.calcSize(data.len);
-            const encoded = try allocator.alloc(u8, encoded_len);
-            defer allocator.free(encoded);
-            _ = encoder.encode(encoded, data);
-
+            var clean: std.ArrayList(u8) = .empty;
+            defer clean.deinit(allocator);
+            for (data) |ch| {
+                if (ch != ' ' and ch != '\t' and ch != '\n' and ch != '\r') {
+                    try clean.append(allocator, ch);
+                }
+            }
             var i: usize = 0;
-            while (i < encoded.len) {
+            while (i < clean.items.len) {
                 try writeIndent(writer, indent_level + 1, options.indent);
-                const end = @min(i + 76, encoded.len);
-                try writer.writeAll(encoded[i..end]);
+                const end = @min(i + 76, clean.items.len);
+                try writer.writeAll(clean.items[i..end]);
                 try writer.writeByte('\n');
                 i = end;
             }
@@ -329,7 +330,7 @@ test "render: deeply nested maps" {
 
 test "render: binary value" {
     const alloc = std.testing.allocator;
-    const result = try render(alloc, .{ .binary = "Hello" }, .{});
+    const result = try render(alloc, .{ .binary = "SGVsbG8=" }, .{});
     defer alloc.free(result);
     try std.testing.expectEqualStrings("!!binary |\n  SGVsbG8=\n", result);
 }

@@ -67,5 +67,6 @@ pub const Error = error{
     UnclosedFlowMapping,
     InvalidBlockScalar,
     InvalidAnchor,
+    TabInIndentation,
     OutOfMemory,
 };
