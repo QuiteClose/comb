@@ -2,7 +2,7 @@
 
 YAML 1.2 parser, renderer, and JSON interop library for Zig. Parses YAML into a typed value tree, serializes to JSON or normalized YAML, and provides a CLI for format conversion. Zero external dependencies.
 
-**Status:** Feature-complete. YAML Test Suite conformance tracked with four-category system (passed, expected failure, unexpected failure, unexpected pass).
+**Status:** Feature-complete. All 402 YAML Test Suite cases pass.
 
 ## Architecture
 
@@ -49,12 +49,12 @@ Value.zig → (leaf)
 | `src/root.zig` | Public API facade. Re-exports types from `options.zig` and `Value.zig`. Functions: `parseFromSlice`, `parse`, `parseAll`, `toJson`, `toYaml`, `render`, `valueToJson`, `indentToWhitespace`. |
 | `src/Parser.zig` | Recursive descent parser. Handles all YAML 1.2 node types: block/flow collections, all scalar styles, anchors/aliases, merge keys, tags, directives, complex keys, multi-document streams. State: byte position, allocator, anchor map, depth counter, options. |
 | `src/Renderer.zig` | Serializes `comb.Value` back to normalized YAML. Handles quoting decisions (reserved words, numbers, whitespace, control characters), indentation, block collections, special floats, binary encoding, key sorting. |
-| `src/Value.zig` | `Value` tagged union (string, integer, float, boolean, null_val, array, object, binary, tagged), `Entry` with `keyLessThan` comparator, `Tagged`, conversion to `std.json.Value`, deep equality. |
+| `src/Value.zig` | `Value` tagged union (string, integer, float, boolean, null_val, array, object, binary, tagged), `Entry` with `keyLessThan` comparator, `Tagged`, key lookup methods (`get`, `getStr`, `getArray`, `getObject`), conversion to `std.json.Value`, deep equality. |
 | `src/options.zig` | Shared configuration types: `ParseOptions`, `DuplicateKeyBehavior`, `Diagnostics`, `OutputOptions`, `Parsed(T)`, `Error`. Leaf module with no project imports. |
 | `src/schema.zig` | YAML 1.2 Core Schema type detection: `detectScalarType`, `parseBoolStr`, `isReservedScalar`, `looksLikeNumber`. Single source of truth for null/boolean/infinity/NaN string spellings. |
 | `src/diagnostic.zig` | Error-location utility: `setError` populates `Diagnostics` with line, column, source line excerpt from a byte position. |
 | `src/main.zig` | CLI entry point. Argument parsing, file/stdin I/O, JSON/YAML output modes. |
-| `src/yaml_suite_runner.zig` | YAML Test Suite runner. Parses grouped `.test` files and validates parser output against expected JSON. Four-category tracking with expected-failures list. |
+| `src/yaml_suite_runner.zig` | YAML Test Suite runner. Parses grouped `.test` files and validates parser output against expected JSON. Strict pass/fail model with no expected-failure list. |
 | `tools/fetch_suite.zig` | Build tool. Clones the upstream YAML Test Suite, reads tags for grouping, and regenerates `.test` files. |
 
 ### Parser Structure
@@ -167,11 +167,7 @@ Three layers of tests, all run via `zig build test`:
 
 From the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite) (`data-2022-01-17` tag -- the latest dated release of the test data). Tests are stored in grouped `.test` files using HTML comment delimiters, organized by upstream tags (e.g. `literal.test`, `flow.test`, `mapping.test`).
 
-Four-category tracking:
-- **Passed** -- correct output
-- **Expected failures** -- tracked in `yaml_suite_runner.zig` with categorized reasons (too_permissive, parse_error, json_mismatch, multi_doc_json)
-- **Unexpected failures** -- any regression fails the build
-- **Unexpected passes** -- stale expected-failure entries also fail the build
+All cases must pass outright -- there is no expected-failure mechanism. Any failure fails the build immediately.
 
 ### Unit tests
 
@@ -196,7 +192,7 @@ Success and error cases in `build.zig`. Each spawns the built `comb` binary with
 zig build fetch-suite
 ```
 
-Clones the upstream repo, reads `tags/` for grouping, and regenerates `.test` files. The expected-failures list in `yaml_suite_runner.zig` is our own metadata and is not affected by regeneration.
+Clones the upstream repo, reads `tags/` for grouping, and regenerates `.test` files.
 
 ### Test file format
 

@@ -10,7 +10,7 @@ Straightens out YAML. A YAML 1.2 parser and renderer for Zig.
 - **JSON output** -- convert YAML to JSON via `std.json` with pretty-print and compact modes
 - **Error diagnostics** -- line, column, source excerpt, and error kind on parse failure
 - **Zero dependencies** -- pure Zig, no external libraries
-- **Conformance tested** -- validated against the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite) with four-category tracking (passed, expected failure, unexpected failure, unexpected pass)
+- **Conformance tested** -- validated against the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite); all 402 cases pass
 
 ## Building
 
@@ -39,6 +39,11 @@ defer json_parsed.deinit();
 // Parse all documents in a multi-document stream
 var docs = try comb.parseAll(allocator, yaml_input, .{});
 defer docs.deinit();
+
+// Access values by key
+const name = parsed.value.getStr("name") orelse "unknown";
+const items = parsed.value.getArray("items") orelse &.{};
+const nested = parsed.value.getObject("metadata");
 
 // YAML -> JSON string
 const json = try comb.toJson(allocator, yaml_input, .{ .indent = 2 });
@@ -177,7 +182,7 @@ Each test is assigned to exactly one file using a priority list (most specific t
 
 ### Conformance tracking
 
-Expected failures are tracked in `src/yaml_suite_runner.zig` with categorized reasons. Any unexpected failure or unexpected pass fails the build, ensuring regressions are caught immediately.
+All test cases must pass outright -- there is no expected-failure mechanism. Any failure fails the build immediately, ensuring regressions are caught.
 
 ## Architecture
 
