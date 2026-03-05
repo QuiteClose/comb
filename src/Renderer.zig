@@ -42,12 +42,12 @@ fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, inden
                     try writer.writeByte('\n');
                     try writeIndent(writer, indent_level, options.indent);
                 }
-                try writer.writeAll("- ");
                 if (isCollection(item)) {
-                    try writer.writeByte('\n');
+                    try writer.writeAll("-\n");
                     try writeIndent(writer, indent_level + 1, options.indent);
                     try renderValue(allocator, writer, item, indent_level + 1, options, true);
                 } else {
+                    try writer.writeAll("- ");
                     try renderValue(allocator, writer, item, indent_level + 1, options, false);
                 }
             }
@@ -80,12 +80,12 @@ fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, inden
                         try writeIndent(writer, indent_level, options.indent);
                     },
                 }
-                try writer.writeAll(": ");
                 if (isCollection(entry.value)) {
-                    try writer.writeByte('\n');
+                    try writer.writeAll(":\n");
                     try writeIndent(writer, indent_level + 1, options.indent);
                     try renderValue(allocator, writer, entry.value, indent_level + 1, options, true);
                 } else {
+                    try writer.writeAll(": ");
                     try renderValue(allocator, writer, entry.value, indent_level + 1, options, false);
                 }
             }
@@ -156,6 +156,9 @@ fn renderString(writer: *std.io.Writer, s: []const u8) !void {
 
 fn needsQuoting(s: []const u8) bool {
     if (s.len == 0) return true;
+
+    if (s[0] == ' ' or s[0] == '\t' or s[s.len - 1] == ' ' or s[s.len - 1] == '\t')
+        return true;
 
     const first = s[0];
     if (first == '-' or first == '?' or first == ':' or first == ',' or
@@ -294,7 +297,7 @@ test "render: nested map in array" {
     const items = [_]Value{.{ .object = &inner }};
     const result = try render(alloc, .{ .array = &items }, .{});
     defer alloc.free(result);
-    try std.testing.expectEqualStrings("- \n  key: val", result);
+    try std.testing.expectEqualStrings("-\n  key: val", result);
 }
 
 test "render: array in map" {
@@ -305,7 +308,7 @@ test "render: array in map" {
     };
     const result = try render(alloc, .{ .object = &entries }, .{});
     defer alloc.free(result);
-    try std.testing.expectEqualStrings("items: \n  - 1\n  - 2", result);
+    try std.testing.expectEqualStrings("items:\n  - 1\n  - 2", result);
 }
 
 test "render: deeply nested maps" {
@@ -321,7 +324,7 @@ test "render: deeply nested maps" {
     };
     const result = try render(alloc, .{ .object = &outer }, .{});
     defer alloc.free(result);
-    try std.testing.expectEqualStrings("a: \n  b: \n    c: 1", result);
+    try std.testing.expectEqualStrings("a:\n  b:\n    c: 1", result);
 }
 
 test "render: binary value" {
@@ -415,5 +418,47 @@ test "render: custom indent size" {
     };
     const result = try render(alloc, .{ .object = &outer }, .{ .indent = 4 });
     defer alloc.free(result);
-    try std.testing.expectEqualStrings("a: \n    b: 1", result);
+    try std.testing.expectEqualStrings("a:\n    b: 1", result);
+}
+
+test "render: whitespace-only string quoted" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = " " }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("' '", result);
+}
+
+test "render: leading whitespace string quoted" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = " hello" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("' hello'", result);
+}
+
+test "render: trailing whitespace string quoted" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "hello " }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'hello '", result);
+}
+
+test "render: tab-only string quoted" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "\t" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'\t'", result);
+}
+
+test "render: no trailing space before block collection" {
+    const alloc = std.testing.allocator;
+    const inner = [_]Entry{
+        .{ .key = .{ .string = "b" }, .value = .{ .integer = 1 } },
+    };
+    const outer = [_]Entry{
+        .{ .key = .{ .string = "a" }, .value = .{ .object = &inner } },
+    };
+    const result = try render(alloc, .{ .object = &outer }, .{});
+    defer alloc.free(result);
+    try std.testing.expect(std.mem.indexOf(u8, result, ": \n") == null);
+    try std.testing.expectEqualStrings("a:\n  b: 1", result);
 }
