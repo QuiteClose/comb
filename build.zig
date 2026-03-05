@@ -156,14 +156,14 @@ fn addCliTests(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Buil
             .name = "cli: YAML with indent 4",
             .stdin = "a:\n  b: 1\n",
             .args = &.{ "--yaml", "--indent", "4" },
-            .expected = "a: \n    b: 1\n",
+            .expected = "a:\n    b: 1\n",
         },
         // --yaml with nested array
         .{
             .name = "cli: YAML nested array",
             .stdin = "items:\n- 1\n- 2\n",
             .args = &.{"--yaml"},
-            .expected = "items: \n  - 1\n  - 2\n",
+            .expected = "items:\n  - 1\n  - 2\n",
         },
         // --yaml with special scalar values
         .{
@@ -171,6 +171,13 @@ fn addCliTests(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Buil
             .stdin = "a: true\nb: null\nc: 42\n",
             .args = &.{"--yaml"},
             .expected = "a: true\nb: null\nc: 42\n",
+        },
+        // --all --allow-duplicate-keys
+        .{
+            .name = "cli: all with allow duplicate keys",
+            .stdin = "a: 1\na: 2",
+            .args = &.{ "--all", "--allow-duplicate-keys" },
+            .expected = "[{\"a\":2}]\n",
         },
         // --help flag
         .{
@@ -203,6 +210,7 @@ fn addCliTests(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Buil
         .{ .name = "cli error: indent missing value", .stdin = "", .args = &.{"--indent"} },
         .{ .name = "cli error: unknown flag", .stdin = "", .args = &.{"--nonexistent"} },
         .{ .name = "cli error: duplicate keys strict", .stdin = "a: 1\na: 2", .args = &.{"--strict"} },
+        .{ .name = "cli error: duplicate keys strict with --all", .stdin = "a: 1\na: 2", .args = &.{ "--all", "--strict" } },
     };
 
     for (&error_cases) |case| {

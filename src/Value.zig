@@ -188,7 +188,7 @@ test "toStdJsonValue: scalars" {
     try std.testing.expectEqual(@as(i64, 42), int_json.integer);
 
     const flt_json = try (Value{ .float = 3.14 }).toStdJsonValue(alloc);
-    try std.testing.expect(@abs(flt_json.float - 3.14) < 0.001);
+    try std.testing.expectEqual(@as(f64, 3.14), flt_json.float);
 
     const b_json = try (Value{ .boolean = true }).toStdJsonValue(alloc);
     try std.testing.expect(b_json.bool);

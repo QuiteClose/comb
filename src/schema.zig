@@ -76,3 +76,137 @@ pub fn looksLikeNumber(s: []const u8) bool {
     if (s[start] == '.') return start + 1 < s.len and s[start + 1] >= '0' and s[start + 1] <= '9';
     return s[start] >= '0' and s[start] <= '9';
 }
+
+const testing = std.testing;
+
+// ── detectScalarType tests ──────────────────────────────────────────────
+
+test "detectScalarType: empty string is null" {
+    try testing.expectEqual(Value{ .null_val = {} }, detectScalarType(""));
+}
+
+test "detectScalarType: null spellings" {
+    const cases = [_][]const u8{ "~", "null", "Null", "NULL" };
+    for (cases) |s| try testing.expectEqual(Value{ .null_val = {} }, detectScalarType(s));
+}
+
+test "detectScalarType: boolean spellings" {
+    for ([_][]const u8{ "true", "True", "TRUE" }) |s|
+        try testing.expectEqual(Value{ .boolean = true }, detectScalarType(s));
+    for ([_][]const u8{ "false", "False", "FALSE" }) |s|
+        try testing.expectEqual(Value{ .boolean = false }, detectScalarType(s));
+}
+
+test "detectScalarType: positive infinity" {
+    for ([_][]const u8{ ".inf", ".Inf", ".INF" }) |s| {
+        const v = detectScalarType(s);
+        try testing.expect(v == .float and std.math.isInf(v.float) and v.float > 0);
+    }
+}
+
+test "detectScalarType: negative infinity" {
+    for ([_][]const u8{ "-.inf", "-.Inf", "-.INF" }) |s| {
+        const v = detectScalarType(s);
+        try testing.expect(v == .float and std.math.isInf(v.float) and v.float < 0);
+    }
+}
+
+test "detectScalarType: NaN" {
+    for ([_][]const u8{ ".nan", ".NaN", ".NAN" }) |s| {
+        const v = detectScalarType(s);
+        try testing.expect(v == .float and std.math.isNan(v.float));
+    }
+}
+
+test "detectScalarType: decimal integers" {
+    try testing.expectEqual(Value{ .integer = 0 }, detectScalarType("0"));
+    try testing.expectEqual(Value{ .integer = 42 }, detectScalarType("42"));
+    try testing.expectEqual(Value{ .integer = -7 }, detectScalarType("-7"));
+    try testing.expectEqual(Value{ .integer = 1000000 }, detectScalarType("1000000"));
+}
+
+test "detectScalarType: octal integers" {
+    try testing.expectEqual(Value{ .integer = 8 }, detectScalarType("0o10"));
+    try testing.expectEqual(Value{ .integer = 255 }, detectScalarType("0o377"));
+}
+
+test "detectScalarType: hex integers" {
+    try testing.expectEqual(Value{ .integer = 255 }, detectScalarType("0xFF"));
+    try testing.expectEqual(Value{ .integer = 255 }, detectScalarType("0XFF"));
+    try testing.expectEqual(Value{ .integer = 0 }, detectScalarType("0x0"));
+}
+
+test "detectScalarType: floats" {
+    const v = detectScalarType("3.14");
+    try testing.expect(v == .float and @abs(v.float - 3.14) < 1e-10);
+    const neg = detectScalarType("-1.5");
+    try testing.expect(neg == .float and @abs(neg.float - -1.5) < 1e-10);
+}
+
+test "detectScalarType: plain strings" {
+    try testing.expectEqual(Value{ .string = "hello" }, detectScalarType("hello"));
+    try testing.expectEqual(Value{ .string = "foo bar" }, detectScalarType("foo bar"));
+    try testing.expectEqual(Value{ .string = "0o" }, detectScalarType("0o"));
+    try testing.expectEqual(Value{ .string = "0x" }, detectScalarType("0x"));
+    try testing.expectEqual(Value{ .string = "+" }, detectScalarType("+"));
+    try testing.expectEqual(Value{ .string = "-" }, detectScalarType("-"));
+}
+
+// ── parseBoolStr tests ──────────────────────────────────────────────────
+
+test "parseBoolStr: recognized booleans" {
+    try testing.expectEqual(@as(?bool, true), parseBoolStr("true"));
+    try testing.expectEqual(@as(?bool, true), parseBoolStr("True"));
+    try testing.expectEqual(@as(?bool, true), parseBoolStr("TRUE"));
+    try testing.expectEqual(@as(?bool, false), parseBoolStr("false"));
+    try testing.expectEqual(@as(?bool, false), parseBoolStr("False"));
+    try testing.expectEqual(@as(?bool, false), parseBoolStr("FALSE"));
+}
+
+test "parseBoolStr: non-booleans return null" {
+    try testing.expectEqual(@as(?bool, null), parseBoolStr("yes"));
+    try testing.expectEqual(@as(?bool, null), parseBoolStr("no"));
+    try testing.expectEqual(@as(?bool, null), parseBoolStr("on"));
+    try testing.expectEqual(@as(?bool, null), parseBoolStr("off"));
+    try testing.expectEqual(@as(?bool, null), parseBoolStr(""));
+    try testing.expectEqual(@as(?bool, null), parseBoolStr("TRUE "));
+}
+
+// ── isReservedScalar tests ──────────────────────────────────────────────
+
+test "isReservedScalar: all reserved words" {
+    const reserved = [_][]const u8{ "~", "null", "Null", "NULL", "true", "True", "TRUE", "false", "False", "FALSE", ".inf", ".Inf", ".INF", "-.inf", "-.Inf", "-.INF", ".nan", ".NaN", ".NAN" };
+    for (reserved) |s| try testing.expect(isReservedScalar(s));
+}
+
+test "isReservedScalar: non-reserved words" {
+    try testing.expect(!isReservedScalar("hello"));
+    try testing.expect(!isReservedScalar("42"));
+    try testing.expect(!isReservedScalar(""));
+    try testing.expect(!isReservedScalar("yes"));
+    try testing.expect(!isReservedScalar("inf"));
+    try testing.expect(!isReservedScalar("nan"));
+}
+
+// ── looksLikeNumber tests ───────────────────────────────────────────────
+
+test "looksLikeNumber: positive cases" {
+    try testing.expect(looksLikeNumber("0"));
+    try testing.expect(looksLikeNumber("42"));
+    try testing.expect(looksLikeNumber("-1"));
+    try testing.expect(looksLikeNumber("+3"));
+    try testing.expect(looksLikeNumber(".5"));
+    try testing.expect(looksLikeNumber("-.5"));
+    try testing.expect(looksLikeNumber("3.14"));
+    try testing.expect(looksLikeNumber("0x1F"));
+}
+
+test "looksLikeNumber: negative cases" {
+    try testing.expect(!looksLikeNumber(""));
+    try testing.expect(!looksLikeNumber("hello"));
+    try testing.expect(!looksLikeNumber("+"));
+    try testing.expect(!looksLikeNumber("-"));
+    try testing.expect(!looksLikeNumber("."));
+    try testing.expect(!looksLikeNumber("-."));
+    try testing.expect(!looksLikeNumber(".a"));
+}
