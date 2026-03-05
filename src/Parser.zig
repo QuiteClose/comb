@@ -24,6 +24,7 @@ depth: u16,
 anchors: std.StringHashMap(Value),
 tag_handles: std.StringHashMap([]const u8),
 last_scalar_multiline: bool,
+seen_yaml_directive: bool,
 
 /// Create a new parser for the given input with the specified options.
 pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
@@ -36,6 +37,7 @@ pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions)
         .anchors = std.StringHashMap(Value).init(allocator),
         .tag_handles = std.StringHashMap([]const u8).init(allocator),
         .last_scalar_multiline = false,
+        .seen_yaml_directive = false,
     };
 }
 
@@ -45,9 +47,12 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
     self.skipWhitespaceAndComments();
 
     while (!self.atEnd() and self.startsWith("%")) {
-        self.parseDirective();
+        try self.parseDirective();
         self.skipWhitespaceAndComments();
     }
+
+    if (self.seen_yaml_directive and (self.atEnd() or !self.isDocumentStartMarker()))
+        return self.fail("UnexpectedCharacter");
 
     if (!self.atEnd() and self.isDocumentStartMarker()) {
         self.pos += 3;
@@ -70,15 +75,21 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
     self.skipBom();
     var docs: std.ArrayList(Value) = .empty;
     var had_directives = false;
+    var document_closed = true;
 
     while (true) {
         self.skipWhitespaceAndComments();
-        if (self.atEnd()) break;
+        if (self.atEnd()) {
+            if (had_directives) return self.fail("UnexpectedCharacter");
+            break;
+        }
 
         if (self.isDocumentStartMarker()) {
             self.anchors.clearRetainingCapacity();
             if (!had_directives) self.tag_handles.clearRetainingCapacity();
             had_directives = false;
+            self.seen_yaml_directive = false;
+            document_closed = false;
             self.pos += 3;
             self.skipInlineSpace();
             if (!self.atEnd() and self.peek() == '#') self.skipToEndOfLine();
@@ -100,11 +111,16 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
                 docs.append(self.allocator, .{ .null_val = {} }) catch return error.OutOfMemory;
             }
         } else if (self.startsWith("...")) {
+            if (had_directives) return self.fail("UnexpectedCharacter");
             self.pos += 3;
             self.skipToEndOfLine();
             self.skipNewline();
+            document_closed = true;
         } else if (self.startsWith("%")) {
-            self.parseDirective();
+            if (!document_closed)
+                return self.fail("UnexpectedCharacter");
+            self.seen_yaml_directive = false;
+            try self.parseDirective();
             had_directives = true;
         } else {
             const val = try self.parseNode(0);
@@ -1555,8 +1571,28 @@ fn parseTag(self: *Parser) opts.Error![]const u8 {
 
 // ── Directives ──────────────────────────────────────────────────────────
 
-fn parseDirective(self: *Parser) void {
-    if (self.startsWith("%TAG")) {
+fn parseDirective(self: *Parser) opts.Error!void {
+    if (self.startsWith("%YAML") and (self.pos + 5 >= self.input.len or
+        self.input[self.pos + 5] == ' ' or self.input[self.pos + 5] == '\t'))
+    {
+        if (self.seen_yaml_directive) return self.fail("UnexpectedCharacter");
+        self.seen_yaml_directive = true;
+        self.pos += 5;
+        self.skipInlineSpace();
+        const ver_start = self.pos;
+        while (self.pos < self.input.len) {
+            const c = self.input[self.pos];
+            if (c == ' ' or c == '\t' or c == '\n' or c == '\r') break;
+            self.pos += 1;
+        }
+        const version = self.input[ver_start..self.pos];
+        if (version.len == 0) return self.fail("UnexpectedCharacter");
+        if (!isValidYamlVersion(version)) return self.fail("UnexpectedCharacter");
+        self.skipInlineSpace();
+        if (!self.atEnd() and !self.atEndOfLine()) {
+            if (self.peek() != '#') return self.fail("UnexpectedCharacter");
+        }
+    } else if (self.startsWith("%TAG")) {
         self.pos += 4;
         self.skipInlineSpace();
         const handle_start = self.pos;
@@ -1597,6 +1633,14 @@ fn isFlowIndicatorNext(self: *const Parser) bool {
     const next = self.input[self.pos + 1];
     return next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
         next == '{' or next == '}' or next == '\n' or next == '\r';
+}
+
+fn isValidYamlVersion(version: []const u8) bool {
+    const dot = std.mem.indexOfScalar(u8, version, '.') orelse return false;
+    if (dot == 0 or dot == version.len - 1) return false;
+    for (version[0..dot]) |c| if (c < '0' or c > '9') return false;
+    for (version[dot + 1 ..]) |c| if (c < '0' or c > '9') return false;
+    return true;
 }
 
 fn isDocumentMarker(self: *const Parser) bool {
