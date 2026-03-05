@@ -113,6 +113,9 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
         } else if (self.startsWith("...")) {
             if (had_directives) return self.fail("UnexpectedCharacter");
             self.pos += 3;
+            self.skipInlineSpace();
+            if (!self.atEnd() and !self.atEndOfLine() and self.peek() != '#')
+                return self.fail("UnexpectedCharacter");
             self.skipToEndOfLine();
             self.skipNewline();
             document_closed = true;
@@ -123,6 +126,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
             try self.parseDirective();
             had_directives = true;
         } else {
+            document_closed = false;
             const val = try self.parseNode(0);
             try self.rejectOrphanContent();
             docs.append(self.allocator, val) catch return error.OutOfMemory;

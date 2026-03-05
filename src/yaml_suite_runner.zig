@@ -21,10 +21,8 @@ const FailureReason = enum {
 
 const expected_failures: []const ExpectedFailure = &.{
     // Parser accepts invalid YAML that should be rejected (too permissive)
-    .{ .id = "3HFZ", .reason = .too_permissive },
     .{ .id = "4JVG", .reason = .too_permissive },
     .{ .id = "5U3A", .reason = .too_permissive },
-    .{ .id = "9HCY", .reason = .too_permissive },
     .{ .id = "9KBC", .reason = .too_permissive },
     .{ .id = "BD7L", .reason = .too_permissive },
     .{ .id = "BS4K", .reason = .too_permissive },
