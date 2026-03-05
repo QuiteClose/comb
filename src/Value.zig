@@ -132,6 +132,37 @@ pub const Value = union(enum) {
         };
     }
 
+    /// Look up a key in an object. Returns null if self is not `.object`
+    /// or if no entry has a `.string` key matching `key`.
+    pub fn get(self: Value, key: []const u8) ?Value {
+        const entries = switch (self) { .object => |o| o, else => return null };
+        for (entries) |entry| {
+            switch (entry.key) {
+                .string => |k| if (std.mem.eql(u8, k, key)) return entry.value,
+                else => {},
+            }
+        }
+        return null;
+    }
+
+    /// Look up a string value by key. Returns null if the key is missing
+    /// or the value is not `.string`.
+    pub fn getStr(self: Value, key: []const u8) ?[]const u8 {
+        return switch (self.get(key) orelse return null) { .string => |s| s, else => null };
+    }
+
+    /// Look up an array value by key. Returns null if the key is missing
+    /// or the value is not `.array`.
+    pub fn getArray(self: Value, key: []const u8) ?[]const Value {
+        return switch (self.get(key) orelse return null) { .array => |a| a, else => null };
+    }
+
+    /// Look up an object value by key. Returns null if the key is missing
+    /// or the value is not `.object`.
+    pub fn getObject(self: Value, key: []const u8) ?[]const Entry {
+        return switch (self.get(key) orelse return null) { .object => |o| o, else => null };
+    }
+
     /// Debug formatting via std.fmt.
     pub fn format(self: Value, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         switch (self) {
@@ -278,4 +309,107 @@ test "eql: objects" {
 
     try std.testing.expect((Value{ .object = &a }).eql(.{ .object = &b }));
     try std.testing.expect(!(Value{ .object = &a }).eql(.{ .object = &c }));
+}
+
+// ── Lookup method tests ─────────────────────────────────────────────────
+
+const test_entries = [_]Entry{
+    .{ .key = .{ .string = "name" }, .value = .{ .string = "Alice" } },
+    .{ .key = .{ .string = "age" }, .value = .{ .integer = 30 } },
+    .{ .key = .{ .string = "items" }, .value = .{ .array = &[_]Value{ .{ .integer = 1 }, .{ .integer = 2 } } } },
+    .{ .key = .{ .string = "nested" }, .value = .{ .object = &[_]Entry{
+        .{ .key = .{ .string = "x" }, .value = .{ .integer = 10 } },
+    } } },
+    .{ .key = .{ .integer = 42 }, .value = .{ .string = "int-key" } },
+};
+
+const test_obj = Value{ .object = &test_entries };
+const empty_obj = Value{ .object = &[_]Entry{} };
+
+test "get: finds existing key" {
+    const val = test_obj.get("name").?;
+    try std.testing.expectEqualStrings("Alice", val.string);
+}
+
+test "get: returns null for missing key" {
+    try std.testing.expect(test_obj.get("missing") == null);
+}
+
+test "get: skips non-string keys" {
+    try std.testing.expect(test_obj.get("42") == null);
+}
+
+test "get: returns null on non-object receiver" {
+    try std.testing.expect((Value{ .string = "hello" }).get("x") == null);
+    try std.testing.expect((Value{ .integer = 1 }).get("x") == null);
+    try std.testing.expect((Value{ .null_val = {} }).get("x") == null);
+    try std.testing.expect((Value{ .array = &[_]Value{} }).get("x") == null);
+}
+
+test "get: returns null on empty object" {
+    try std.testing.expect(empty_obj.get("anything") == null);
+}
+
+test "getStr: returns string value" {
+    try std.testing.expectEqualStrings("Alice", test_obj.getStr("name").?);
+}
+
+test "getStr: returns null for non-string value" {
+    try std.testing.expect(test_obj.getStr("age") == null);
+}
+
+test "getStr: returns null for missing key" {
+    try std.testing.expect(test_obj.getStr("missing") == null);
+}
+
+test "getStr: returns null on non-object receiver" {
+    try std.testing.expect((Value{ .integer = 5 }).getStr("x") == null);
+}
+
+test "getStr: returns null on empty object" {
+    try std.testing.expect(empty_obj.getStr("x") == null);
+}
+
+test "getArray: returns array value" {
+    const arr = test_obj.getArray("items").?;
+    try std.testing.expectEqual(@as(usize, 2), arr.len);
+    try std.testing.expectEqual(@as(i64, 1), arr[0].integer);
+}
+
+test "getArray: returns null for non-array value" {
+    try std.testing.expect(test_obj.getArray("name") == null);
+}
+
+test "getArray: returns null for missing key" {
+    try std.testing.expect(test_obj.getArray("missing") == null);
+}
+
+test "getArray: returns null on non-object receiver" {
+    try std.testing.expect((Value{ .boolean = true }).getArray("x") == null);
+}
+
+test "getArray: returns null on empty object" {
+    try std.testing.expect(empty_obj.getArray("x") == null);
+}
+
+test "getObject: returns object value" {
+    const inner = test_obj.getObject("nested").?;
+    try std.testing.expectEqual(@as(usize, 1), inner.len);
+    try std.testing.expectEqualStrings("x", inner[0].key.string);
+}
+
+test "getObject: returns null for non-object value" {
+    try std.testing.expect(test_obj.getObject("name") == null);
+}
+
+test "getObject: returns null for missing key" {
+    try std.testing.expect(test_obj.getObject("missing") == null);
+}
+
+test "getObject: returns null on non-object receiver" {
+    try std.testing.expect((Value{ .float = 1.0 }).getObject("x") == null);
+}
+
+test "getObject: returns null on empty object" {
+    try std.testing.expect(empty_obj.getObject("x") == null);
 }
