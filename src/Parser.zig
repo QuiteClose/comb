@@ -427,12 +427,14 @@ fn parseBlockMappingWithComplexKey(self: *Parser, indent: usize) opts.Error!Valu
                 value = try self.parseBlockMappingValue(indent);
             }
 
+            try self.checkDuplicateKey(entries.items, key);
             entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
         } else if (findKeyValueSep(self.readToEndOfUnquotedLineNoAdvance()) != null) {
             const key = try self.parseBlockMappingKey();
             try self.consumeColon();
             self.skipInlineSpace();
             const value = try self.parseBlockMappingValue(indent);
+            try self.checkDuplicateKey(entries.items, key);
             entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
         } else {
             break;
@@ -608,25 +610,6 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
     if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
 
     return self.parsePlainScalar(map_indent + 1);
-}
-
-fn parseInlineValue(self: *Parser) opts.Error!Value {
-    const start = self.pos;
-    while (self.pos < self.input.len) {
-        if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') break;
-        if (self.input[self.pos] == '#' and self.pos > start and
-            (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t'))
-        {
-            break;
-        }
-        self.pos += 1;
-    }
-    const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
-    self.skipToEndOfLine();
-    self.skipNewline();
-
-    if (raw.len == 0) return .{ .null_val = {} };
-    return schema.detectScalarType(raw);
 }
 
 // ── Block sequence ──────────────────────────────────────────────────────
@@ -1159,21 +1142,21 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
                 '"' => result.append(self.allocator, '"') catch return error.OutOfMemory,
                 '/' => result.append(self.allocator, '/') catch return error.OutOfMemory,
                 '\\' => result.append(self.allocator, '\\') catch return error.OutOfMemory,
-                'N' => self.appendUtf8(&result, 0x85),
-                '_' => self.appendUtf8(&result, 0xA0),
-                'L' => self.appendUtf8(&result, 0x2028),
-                'P' => self.appendUtf8(&result, 0x2029),
+                'N' => try self.appendUtf8(&result, 0x85),
+                '_' => try self.appendUtf8(&result, 0xA0),
+                'L' => try self.appendUtf8(&result, 0x2028),
+                'P' => try self.appendUtf8(&result, 0x2029),
                 'x' => {
                     const cp = self.parseHexEscape(2) orelse return self.fail("InvalidEscapeSequence");
-                    self.appendUtf8(&result, cp);
+                    try self.appendUtf8(&result, cp);
                 },
                 'u' => {
                     const cp = self.parseHexEscape(4) orelse return self.fail("InvalidEscapeSequence");
-                    self.appendUtf8(&result, cp);
+                    try self.appendUtf8(&result, cp);
                 },
                 'U' => {
                     const cp = self.parseHexEscape(8) orelse return self.fail("InvalidEscapeSequence");
-                    self.appendUtf8(&result, cp);
+                    try self.appendUtf8(&result, cp);
                 },
                 '\n' => self.skipInlineSpace(),
                 '\r' => {
@@ -1280,10 +1263,10 @@ fn parseHexEscape(self: *Parser, digits: u8) ?u21 {
     return std.fmt.parseInt(u21, hex, 16) catch return null;
 }
 
-fn appendUtf8(self: *Parser, list: *std.ArrayList(u8), codepoint: u21) void {
+fn appendUtf8(self: *Parser, list: *std.ArrayList(u8), codepoint: u21) opts.Error!void {
     var buf: [4]u8 = undefined;
-    const len = std.unicode.utf8Encode(codepoint, &buf) catch return;
-    list.appendSlice(self.allocator, buf[0..len]) catch {};
+    const len = std.unicode.utf8Encode(codepoint, &buf) catch return self.fail("InvalidEscapeSequence");
+    list.appendSlice(self.allocator, buf[0..len]) catch return error.OutOfMemory;
 }
 
 // ── Anchors and aliases ─────────────────────────────────────────────────
@@ -1717,7 +1700,7 @@ test "parse: multiple documents" {
         \\first: doc
         \\---
         \\second: doc
-    );
+    , .{});
     defer parsed.deinit();
     try std.testing.expectEqual(@as(usize, 2), parsed.value.len);
 }

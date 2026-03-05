@@ -78,7 +78,7 @@ pub fn main() !void {
     const parse_opts: comb.ParseOptions = .{ .duplicate_keys = duplicate_keys };
 
     if (all_docs) {
-        var parsed = comb.parseAll(alloc, input) catch |err| {
+        var parsed = comb.parseAll(alloc, input, parse_opts) catch |err| {
             std.debug.print("error: {}\n", .{err});
             std.process.exit(1);
         };

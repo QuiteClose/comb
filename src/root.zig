@@ -77,13 +77,13 @@ pub fn parse(allocator: Allocator, input: []const u8) Error!Parsed(Value) {
 }
 
 /// Parse all YAML documents.
-pub fn parseAll(allocator: Allocator, input: []const u8) Error!Parsed([]const Value) {
+pub fn parseAll(allocator: Allocator, input: []const u8, options: ParseOptions) Error!Parsed([]const Value) {
     const Parser = @import("Parser.zig");
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
     const aa = arena.allocator();
-    var parser = Parser.init(aa, input, .{});
+    var parser = Parser.init(aa, input, options);
     const docs = try parser.parseAllDocuments();
     return .{ .arena = arena, .value = docs };
 }
@@ -231,7 +231,7 @@ test "parse: error returns error" {
 }
 
 test "parseAll: multiple documents" {
-    var p = try parseAll(testing.allocator, "hello\n---\nworld\n");
+    var p = try parseAll(testing.allocator, "hello\n---\nworld\n", .{});
     defer p.deinit();
     try testing.expectEqual(@as(usize, 2), p.value.len);
     try testing.expectEqualStrings("hello", p.value[0].string);
@@ -239,14 +239,14 @@ test "parseAll: multiple documents" {
 }
 
 test "parseAll: single document" {
-    var p = try parseAll(testing.allocator, "solo");
+    var p = try parseAll(testing.allocator, "solo", .{});
     defer p.deinit();
     try testing.expectEqual(@as(usize, 1), p.value.len);
     try testing.expectEqualStrings("solo", p.value[0].string);
 }
 
 test "parseAll: empty input" {
-    var p = try parseAll(testing.allocator, "");
+    var p = try parseAll(testing.allocator, "", .{});
     defer p.deinit();
     try testing.expectEqual(@as(usize, 1), p.value.len);
     try testing.expectEqual(Value{ .null_val = {} }, p.value[0]);
@@ -298,10 +298,14 @@ test "toJson: pretty" {
 }
 
 test "toYaml: roundtrip" {
-    const yaml = try toYaml(testing.allocator, "name: Alice\nage: 30\n", .{});
+    const input = "name: Alice\nage: 30\n";
+    const yaml = try toYaml(testing.allocator, input, .{});
     defer testing.allocator.free(yaml);
-    try testing.expect(std.mem.indexOf(u8, yaml, "name: Alice") != null);
-    try testing.expect(std.mem.indexOf(u8, yaml, "age: 30") != null);
+    const json1 = try toJson(testing.allocator, input, .{ .sort_keys = true });
+    defer testing.allocator.free(json1);
+    const json2 = try toJson(testing.allocator, yaml, .{ .sort_keys = true });
+    defer testing.allocator.free(json2);
+    try testing.expectEqualStrings(json1, json2);
 }
 
 test "toYaml: idempotence" {
@@ -423,4 +427,60 @@ test "diagnostics: not populated on success" {
     defer p.deinit();
     try testing.expectEqual(@as(usize, 0), diag.line);
     try testing.expectEqualStrings("", diag.message);
+}
+
+// ── Regression tests ────────────────────────────────────────────────────
+
+test "regression: parseAll accepts ParseOptions" {
+    const result = parseAll(testing.allocator, "a: 1\na: 2\n", .{ .duplicate_keys = .err });
+    try testing.expectError(error.DuplicateKey, result);
+}
+
+test "regression: parseAll with last_wins" {
+    var p = try parseAll(testing.allocator, "a: 1\na: 2\n", .{ .duplicate_keys = .last_wins });
+    defer p.deinit();
+    try testing.expectEqual(@as(usize, 1), p.value.len);
+}
+
+test "regression: complex key duplicate check" {
+    const input = "? key1\n: val1\n? key1\n: val2\n";
+    const result = parse(testing.allocator, input);
+    try testing.expectError(error.DuplicateKey, result);
+}
+
+test "regression: whitespace-only string quoted in render" {
+    const Renderer = @import("Renderer.zig");
+    const rendered = try Renderer.render(testing.allocator, .{ .string = " " }, .{});
+    defer testing.allocator.free(rendered);
+    try testing.expectEqualStrings("' '", rendered);
+}
+
+test "regression: leading whitespace string quoted in render" {
+    const Renderer = @import("Renderer.zig");
+    const rendered = try Renderer.render(testing.allocator, .{ .string = " hello" }, .{});
+    defer testing.allocator.free(rendered);
+    try testing.expectEqualStrings("' hello'", rendered);
+}
+
+test "regression: trailing whitespace string quoted in render" {
+    const Renderer = @import("Renderer.zig");
+    const rendered = try Renderer.render(testing.allocator, .{ .string = "hello " }, .{});
+    defer testing.allocator.free(rendered);
+    try testing.expectEqualStrings("'hello '", rendered);
+}
+
+test "regression: block collection no trailing space" {
+    const yaml = try toYaml(testing.allocator, "a:\n  b: 1\n", .{});
+    defer testing.allocator.free(yaml);
+    try testing.expect(std.mem.indexOf(u8, yaml, ": \n") == null);
+    try testing.expect(std.mem.indexOf(u8, yaml, "a:\n") != null);
+}
+
+test "regression: whitespace roundtrip" {
+    const Renderer = @import("Renderer.zig");
+    const rendered = try Renderer.render(testing.allocator, .{ .string = "  spaces  " }, .{});
+    defer testing.allocator.free(rendered);
+    var p = try parse(testing.allocator, rendered);
+    defer p.deinit();
+    try testing.expectEqualStrings("  spaces  ", p.value.string);
 }
