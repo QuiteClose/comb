@@ -45,7 +45,7 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
         self.skipWhitespaceAndComments();
     }
 
-    if (!self.atEnd() and self.startsWith("---")) {
+    if (!self.atEnd() and self.isDocumentStartMarker()) {
         self.pos += 3;
         self.skipInlineSpace();
         if (!self.atEnd() and self.peek() == '#') self.skipToEndOfLine();
@@ -68,7 +68,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
         self.skipWhitespaceAndComments();
         if (self.atEnd()) break;
 
-        if (self.startsWith("---")) {
+        if (self.isDocumentStartMarker()) {
             self.anchors.clearRetainingCapacity();
             self.pos += 3;
             self.skipInlineSpace();
@@ -873,24 +873,51 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
         return val;
     }
 
-    const start = self.pos;
-    while (self.pos < self.input.len) {
-        const ch = self.input[self.pos];
-        if (ch == ',' or ch == '}' or ch == '\n' or ch == '\r') break;
-        if (ch == ':') {
-            if (self.pos + 1 >= self.input.len) break;
-            const next = self.input[self.pos + 1];
-            if (next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
-                next == '{' or next == '}' or next == '\n' or next == '\r') break;
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(self.allocator);
+
+    while (true) {
+        const start = self.pos;
+        while (self.pos < self.input.len) {
+            const ch = self.input[self.pos];
+            if (ch == ',' or ch == '}' or ch == '\n' or ch == '\r') break;
+            if (ch == ':') {
+                if (self.pos + 1 >= self.input.len) break;
+                const next = self.input[self.pos + 1];
+                if (next == ' ' or next == '\t' or next == ',' or next == '[' or next == ']' or
+                    next == '{' or next == '}' or next == '\n' or next == '\r') break;
+                self.pos += 1;
+                continue;
+            }
+            if (ch == '#' and self.pos > start and (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t')) break;
             self.pos += 1;
-            continue;
         }
-        self.pos += 1;
+
+        const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+        if (raw.len > 0) {
+            parts.append(self.allocator, raw) catch return error.OutOfMemory;
+        }
+
+        if (self.pos >= self.input.len) break;
+        const ch = self.input[self.pos];
+        if (ch != '\n' and ch != '\r') break;
+
+        self.skipNewline();
+        self.skipInlineSpace();
+        if (self.atEnd()) break;
+        const nc = self.peek();
+        if (nc == ',' or nc == ']' or nc == '}' or nc == '#') break;
     }
 
-    const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
-    if (raw.len == 0) return .{ .string = "" };
-    return schema.detectScalarType(raw);
+    if (parts.items.len == 0) return .{ .string = "" };
+    if (parts.items.len == 1) return schema.detectScalarType(parts.items[0]);
+
+    var result: std.ArrayList(u8) = .empty;
+    for (parts.items, 0..) |part, i| {
+        if (i > 0) result.append(self.allocator, ' ') catch return error.OutOfMemory;
+        result.appendSlice(self.allocator, part) catch return error.OutOfMemory;
+    }
+    return schema.detectScalarType(result.toOwnedSlice(self.allocator) catch return error.OutOfMemory);
 }
 
 // ── Block scalar ────────────────────────────────────────────────────────
@@ -1135,7 +1162,7 @@ fn readValueLine(self: *Parser) []const u8 {
     const start = self.pos;
     while (self.pos < self.input.len) {
         if (self.input[self.pos] == '\n' or self.input[self.pos] == '\r') break;
-        if (self.input[self.pos] == '#' and self.pos > start and self.input[self.pos - 1] == ' ') break;
+        if (self.input[self.pos] == '#' and self.pos > start and (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t')) break;
         self.pos += 1;
     }
     return std.mem.trimRight(u8, self.input[start..self.pos], " \t");
@@ -1410,6 +1437,14 @@ fn isDocumentMarker(self: *const Parser) bool {
     if (self.pos + 3 > self.input.len) return false;
     const triple = self.input[self.pos..][0..3];
     if (!std.mem.eql(u8, triple, "---") and !std.mem.eql(u8, triple, "...")) return false;
+    if (self.pos + 3 == self.input.len) return true;
+    const after = self.input[self.pos + 3];
+    return after == ' ' or after == '\t' or after == '\n' or after == '\r';
+}
+
+fn isDocumentStartMarker(self: *const Parser) bool {
+    if (self.pos + 3 > self.input.len) return false;
+    if (!std.mem.eql(u8, self.input[self.pos..][0..3], "---")) return false;
     if (self.pos + 3 == self.input.len) return true;
     const after = self.input[self.pos + 3];
     return after == ' ' or after == '\t' or after == '\n' or after == '\r';

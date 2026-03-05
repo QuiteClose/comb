@@ -109,13 +109,8 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "565N", .reason = .json_mismatch },
     .{ .id = "5WE3", .reason = .json_mismatch },
     .{ .id = "82AN", .reason = .json_mismatch },
-    .{ .id = "8KB6", .reason = .json_mismatch },
     .{ .id = "A2M4", .reason = .json_mismatch },
-    .{ .id = "DC7X", .reason = .json_mismatch },
-    .{ .id = "NJ66", .reason = .json_mismatch },
 
-    // Multi-document test with flow key folding bug (Phase 2b)
-    .{ .id = "UT92", .reason = .json_mismatch },
 };
 
 fn isExpectedFailure(id: []const u8) ?FailureReason {
