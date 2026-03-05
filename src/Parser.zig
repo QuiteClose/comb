@@ -23,6 +23,7 @@ options: opts.ParseOptions,
 depth: u16,
 anchors: std.StringHashMap(Value),
 tag_handles: std.StringHashMap([]const u8),
+last_scalar_multiline: bool,
 
 /// Create a new parser for the given input with the specified options.
 pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
@@ -34,6 +35,7 @@ pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions)
         .depth = 0,
         .anchors = std.StringHashMap(Value).init(allocator),
         .tag_handles = std.StringHashMap([]const u8).init(allocator),
+        .last_scalar_multiline = false,
     };
 }
 
@@ -197,9 +199,9 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             result = try self.parseBlockMappingFromFirstKey(result, col);
         }
     } else if (c == '"') {
-        const str = try self.parseDoubleQuoted();
+        const str = try self.parseDoubleQuoted(min_col);
         self.skipInlineSpace();
-        if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
+        if (!self.last_scalar_multiline and !self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
@@ -211,9 +213,9 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             result = .{ .string = str };
         }
     } else if (c == '\'') {
-        const str = try self.parseSingleQuoted();
+        const str = try self.parseSingleQuoted(min_col);
         self.skipInlineSpace();
-        if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
+        if (!self.last_scalar_multiline and !self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
             (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
             self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
         {
@@ -520,8 +522,16 @@ fn applyMerge(self: *Parser, entries: *std.ArrayList(Entry), source: Value) opts
 fn parseBlockMappingKey(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return self.fail("UnexpectedEndOfInput");
     const c = self.peek();
-    if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
-    if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (c == '"') {
+        const str = try self.parseDoubleQuoted(0);
+        if (self.last_scalar_multiline) return self.fail("UnexpectedCharacter");
+        return .{ .string = str };
+    }
+    if (c == '\'') {
+        const str = try self.parseSingleQuoted(0);
+        if (self.last_scalar_multiline) return self.fail("UnexpectedCharacter");
+        return .{ .string = str };
+    }
 
     const start = self.pos;
     while (self.pos < self.input.len) {
@@ -636,8 +646,16 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
         const val = try self.parseBlockMappingValue(map_indent);
         return self.applyTag(val, t);
     }
-    if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
-    if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (c == '"') {
+        const str = try self.parseDoubleQuoted(map_indent + 1);
+        try self.rejectTrailingQuotedContent();
+        return .{ .string = str };
+    }
+    if (c == '\'') {
+        const str = try self.parseSingleQuoted(map_indent + 1);
+        try self.rejectTrailingQuotedContent();
+        return .{ .string = str };
+    }
     if (self.isBlockSequenceIndicator()) return self.parseBlockSequence(self.currentCol());
 
     return self.parsePlainScalar(map_indent + 1);
@@ -841,8 +859,8 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
     const c = self.peek();
     if (c == '[') return self.parseFlowSequence(0);
     if (c == '{') return self.parseFlowMapping(0);
-    if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
-    if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (c == '"') return .{ .string = try self.parseDoubleQuoted(0) };
+    if (c == '\'') return .{ .string = try self.parseSingleQuoted(0) };
     if (c == '*') return self.parseAlias();
     if (c == '-' or c == '?') {
         const next_pos = self.pos + 1;
@@ -917,8 +935,8 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
 fn parseFlowKey(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return self.fail("UnexpectedEndOfInput");
     const fc = self.peek();
-    if (fc == '"') return .{ .string = try self.parseDoubleQuoted() };
-    if (fc == '\'') return .{ .string = try self.parseSingleQuoted() };
+    if (fc == '"') return .{ .string = try self.parseDoubleQuoted(0) };
+    if (fc == '\'') return .{ .string = try self.parseSingleQuoted(0) };
     if (fc == '*') return self.parseAlias();
     if (fc == '!') {
         const t = try self.parseTag();
@@ -1236,10 +1254,11 @@ fn readValueLine(self: *Parser) []const u8 {
 
 // ── Quoted strings ──────────────────────────────────────────────────────
 
-fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
+fn parseDoubleQuoted(self: *Parser, min_indent: usize) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '"') return self.fail("UnclosedQuote");
     const quote_col = self.currentCol();
     self.pos += 1;
+    self.last_scalar_multiline = false;
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(self.allocator);
@@ -1295,6 +1314,7 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
                 else => return self.fail("InvalidEscapeSequence"),
             }
         } else if (c == '\n' or c == '\r') {
+            self.last_scalar_multiline = true;
             result.items.len -|= trailing_literal_ws;
             trailing_literal_ws = 0;
             self.pos += 1;
@@ -1313,6 +1333,10 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
                         return self.fail("TabInIndentation");
                 } else break;
             }
+            if (self.isAtLineStart() and self.isDocumentMarker())
+                return self.fail("UnexpectedCharacter");
+            if (min_indent > 0 and self.currentCol() < min_indent)
+                return self.fail("UnexpectedCharacter");
             if (blank_count > 0) {
                 for (0..blank_count) |_| {
                     result.append(self.allocator, '\n') catch return error.OutOfMemory;
@@ -1334,10 +1358,11 @@ fn parseDoubleQuoted(self: *Parser) opts.Error![]const u8 {
     return self.fail("UnclosedQuote");
 }
 
-fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
+fn parseSingleQuoted(self: *Parser, min_indent: usize) opts.Error![]const u8 {
     if (self.atEnd() or self.peek() != '\'') return self.fail("UnclosedQuote");
     const quote_col = self.currentCol();
     self.pos += 1;
+    self.last_scalar_multiline = false;
 
     var result: std.ArrayList(u8) = .empty;
     errdefer result.deinit(self.allocator);
@@ -1355,6 +1380,7 @@ fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
                 return result.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
             }
         } else if (c == '\n' or c == '\r') {
+            self.last_scalar_multiline = true;
             result.items.len -|= trailing_literal_ws;
             trailing_literal_ws = 0;
             self.pos += 1;
@@ -1373,6 +1399,10 @@ fn parseSingleQuoted(self: *Parser) opts.Error![]const u8 {
                         return self.fail("TabInIndentation");
                 } else break;
             }
+            if (self.isAtLineStart() and self.isDocumentMarker())
+                return self.fail("UnexpectedCharacter");
+            if (min_indent > 0 and self.currentCol() < min_indent)
+                return self.fail("UnexpectedCharacter");
             if (blank_count > 0) {
                 for (0..blank_count) |_| {
                     result.append(self.allocator, '\n') catch return error.OutOfMemory;
@@ -1598,6 +1628,16 @@ fn rejectFlowBelowIndent(self: *Parser, min_indent: usize) opts.Error!void {
 }
 
 /// Check for invalid trailing content after a flow collection on the same line.
+/// Reject non-whitespace content after a quoted scalar in block context
+/// (e.g. `"value"#comment` is invalid -- `#` needs a preceding space).
+fn rejectTrailingQuotedContent(self: *Parser) opts.Error!void {
+    if (self.atEnd() or self.atEndOfLine()) return;
+    const c = self.peek();
+    if (c == ' ' or c == '\t') return;
+    if (c == ':') return;
+    return self.fail("UnexpectedCharacter");
+}
+
 fn rejectTrailingFlowContent(self: *Parser) opts.Error!void {
     self.skipInlineSpace();
     if (self.atEnd() or self.atEndOfLine()) return;
