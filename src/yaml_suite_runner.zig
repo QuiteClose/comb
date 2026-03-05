@@ -119,25 +119,8 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "NJ66", .reason = .json_mismatch },
     .{ .id = "WZ62", .reason = .json_mismatch },
 
-    // Multi-document tests: in.json contains multiple JSON values (18 cases)
-    .{ .id = "35KP", .reason = .multi_doc_json },
-    .{ .id = "5TYM", .reason = .multi_doc_json },
-    .{ .id = "6WLZ", .reason = .multi_doc_json },
-    .{ .id = "6XDY", .reason = .multi_doc_json },
-    .{ .id = "6ZKB", .reason = .multi_doc_json },
-    .{ .id = "7Z25", .reason = .multi_doc_json },
-    .{ .id = "9DXL", .reason = .multi_doc_json },
-    .{ .id = "9KAX", .reason = .multi_doc_json },
-    .{ .id = "9WXW", .reason = .multi_doc_json },
-    .{ .id = "JHB9", .reason = .multi_doc_json },
-    .{ .id = "KSS4", .reason = .multi_doc_json },
-    .{ .id = "L383", .reason = .multi_doc_json },
-    .{ .id = "M7A3", .reason = .multi_doc_json },
-    .{ .id = "PUW8", .reason = .multi_doc_json },
-    .{ .id = "RZT7", .reason = .multi_doc_json },
-    .{ .id = "U9NS", .reason = .multi_doc_json },
-    .{ .id = "UT92", .reason = .multi_doc_json },
-    .{ .id = "W4TN", .reason = .multi_doc_json },
+    // Multi-document test with flow key folding bug (Phase 2b)
+    .{ .id = "UT92", .reason = .json_mismatch },
 };
 
 fn isExpectedFailure(id: []const u8) ?FailureReason {
@@ -297,28 +280,133 @@ fn runSingleCase(
         return;
     };
 
-    var yaml_parsed = comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins }) catch {
-        recordResult(results, tc.id, true, "YAML parse error");
-        return;
-    };
-    defer yaml_parsed.deinit();
+    // Try single-document comparison first
+    if (std.json.parseFromSlice(std.json.Value, allocator, json_expected, .{})) |json_parsed| {
+        defer json_parsed.deinit();
 
-    const json_parsed = std.json.parseFromSlice(std.json.Value, allocator, json_expected, .{}) catch {
-        recordResult(results, tc.id, true, "cannot parse expected JSON");
-        return;
-    };
-    defer json_parsed.deinit();
+        var yaml_parsed = comb.parseFromSlice(std.json.Value, allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins }) catch {
+            recordResult(results, tc.id, true, "YAML parse error");
+            return;
+        };
+        defer yaml_parsed.deinit();
 
-    if (jsonEqual(yaml_parsed.value, json_parsed.value)) {
-        recordResult(results, tc.id, false, "");
-    } else {
-        const got_tag: std.meta.Tag(std.json.Value) = yaml_parsed.value;
-        const exp_tag: std.meta.Tag(std.json.Value) = json_parsed.value;
-        if (got_tag == .string and exp_tag == .string) {
-            recordResult(results, tc.id, true, "JSON mismatch (string)");
+        if (jsonEqual(yaml_parsed.value, json_parsed.value)) {
+            recordResult(results, tc.id, false, "");
         } else {
             recordResult(results, tc.id, true, "JSON mismatch");
         }
+        return;
+    } else |_| {}
+
+    // Single JSON parse failed -- try multi-document comparison
+    runMultiDocCase(allocator, tc, json_expected, results);
+}
+
+fn runMultiDocCase(
+    allocator: Allocator,
+    tc: ParsedTestCase,
+    json_expected: []const u8,
+    results: *TestResults,
+) void {
+    const expected_values = parseMultiJsonValues(allocator, json_expected) catch {
+        recordResult(results, tc.id, true, "cannot parse expected JSON");
+        return;
+    };
+
+    var docs_parsed = comb.parseAll(allocator, tc.in_yaml, .{ .duplicate_keys = .last_wins }) catch {
+        recordResult(results, tc.id, true, "YAML parse error (multi-doc)");
+        return;
+    };
+    defer docs_parsed.deinit();
+
+    if (docs_parsed.value.len != expected_values.len) {
+        recordResult(results, tc.id, true, "document count mismatch");
+        return;
+    }
+
+    for (docs_parsed.value, expected_values) |doc, exp| {
+        const doc_json = doc.toStdJsonValue(allocator) catch {
+            recordResult(results, tc.id, true, "failed to convert comb.Value to JSON");
+            return;
+        };
+        if (!jsonEqual(doc_json, exp.value)) {
+            recordResult(results, tc.id, true, "JSON mismatch (multi-doc)");
+            return;
+        }
+    }
+
+    recordResult(results, tc.id, false, "");
+}
+
+const JsonParsed = struct {
+    value: std.json.Value,
+    parsed: std.json.Parsed(std.json.Value),
+};
+
+fn parseMultiJsonValues(allocator: Allocator, json_str: []const u8) ![]JsonParsed {
+    var values: std.ArrayList(JsonParsed) = .empty;
+    var remaining = json_str;
+
+    while (true) {
+        remaining = mem.trimLeft(u8, remaining, " \t\n\r");
+        if (remaining.len == 0) break;
+
+        const end_pos = findJsonValueEnd(remaining) orelse return error.OutOfMemory;
+        const slice = remaining[0..end_pos];
+        const parsed = std.json.parseFromSlice(std.json.Value, allocator, slice, .{}) catch
+            return error.OutOfMemory;
+        try values.append(allocator, .{ .value = parsed.value, .parsed = parsed });
+        remaining = remaining[end_pos..];
+    }
+
+    if (values.items.len < 2) return error.OutOfMemory;
+    return values.items;
+}
+
+/// Find the byte position past the end of the first complete JSON value.
+fn findJsonValueEnd(json: []const u8) ?usize {
+    var i: usize = 0;
+    while (i < json.len and (json[i] == ' ' or json[i] == '\t' or json[i] == '\n' or json[i] == '\r')) : (i += 1) {}
+    if (i >= json.len) return null;
+
+    switch (json[i]) {
+        '{', '[' => {
+            const open = json[i];
+            const close: u8 = if (open == '{') '}' else ']';
+            var depth: usize = 1;
+            i += 1;
+            while (i < json.len and depth > 0) {
+                if (json[i] == '"') {
+                    i += 1;
+                    while (i < json.len and json[i] != '"') {
+                        if (json[i] == '\\') i += 1;
+                        i += 1;
+                    }
+                    if (i < json.len) i += 1;
+                } else {
+                    if (json[i] == open) depth += 1;
+                    if (json[i] == close) depth -= 1;
+                    i += 1;
+                }
+            }
+            return i;
+        },
+        '"' => {
+            i += 1;
+            while (i < json.len and json[i] != '"') {
+                if (json[i] == '\\') i += 1;
+                i += 1;
+            }
+            if (i < json.len) i += 1;
+            return i;
+        },
+        else => {
+            // Number, true, false, null
+            while (i < json.len and json[i] != '\n' and json[i] != '\r' and
+                json[i] != ',' and json[i] != '}' and json[i] != ']') : (i += 1)
+            {}
+            return i;
+        },
     }
 }
 
