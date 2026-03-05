@@ -2,7 +2,7 @@
 
 YAML 1.2 parser, renderer, and JSON interop library for Zig. Parses YAML into a typed value tree, serializes to JSON or normalized YAML, and provides a CLI for format conversion. Zero external dependencies.
 
-**Status:** Feature-complete. All build steps pass, all unit tests pass, 402 YAML Test Suite cases (291 passed, 111 expected failures, 0 unexpected).
+**Status:** Feature-complete. YAML Test Suite conformance tracked with four-category system (passed, expected failure, unexpected failure, unexpected pass).
 
 ## Architecture
 
@@ -44,18 +44,18 @@ Value.zig → (leaf)
 
 ### Module Map
 
-| File | Lines | Role |
-|------|-------|------|
-| `src/root.zig` | ~390 | Public API facade. Re-exports types from `options.zig` and `Value.zig`. Functions: `parseFromSlice`, `parse`, `parseAll`, `toJson`, `toYaml`, `render`, `valueToJson`, `indentToWhitespace`. Contains 28 public API test blocks. |
-| `src/Parser.zig` | ~1,780 | Recursive descent parser. Handles all YAML 1.2 node types: block/flow collections, all scalar styles, anchors/aliases, merge keys, tags, directives, complex keys, multi-document streams. State: byte position, allocator, anchor map, depth counter, options. Contains 23 unit tests. |
-| `src/Renderer.zig` | ~290 | Serializes `comb.Value` back to normalized YAML. Handles quoting decisions, indentation, block collections, special floats, binary encoding, key sorting. Contains 7 unit tests. |
-| `src/Value.zig` | ~290 | `Value` tagged union (string, integer, float, boolean, null_val, array, object, binary, tagged), `Entry` with `keyLessThan` comparator, `Tagged`, conversion to `std.json.Value`, deep equality. Contains 11 unit tests. |
-| `src/options.zig` | ~75 | Shared configuration types: `ParseOptions`, `DuplicateKeyBehavior`, `Diagnostics`, `OutputOptions`, `Parsed(T)`, `Error`. Leaf module with no project imports. |
-| `src/schema.zig` | ~80 | YAML 1.2 Core Schema type detection: `detectScalarType`, `parseBoolStr`, `isReservedScalar`, `looksLikeNumber`. Single source of truth for null/boolean/infinity/NaN string spellings. |
-| `src/diagnostic.zig` | ~55 | Error-location utility: `setError` populates `Diagnostics` with line, column, source line excerpt from a byte position. Contains 3 unit tests. |
-| `src/main.zig` | ~190 | CLI entry point. Argument parsing, file/stdin I/O, JSON/YAML output modes. |
-| `src/yaml_suite_runner.zig` | ~410 | YAML Test Suite runner. Parses grouped `.test` files and validates parser output against expected JSON. Four-category tracking with expected-failures list. |
-| `tools/fetch_suite.zig` | — | Build tool. Clones the upstream YAML Test Suite, reads tags for grouping, and regenerates `.test` files. |
+| File | Role |
+|------|------|
+| `src/root.zig` | Public API facade. Re-exports types from `options.zig` and `Value.zig`. Functions: `parseFromSlice`, `parse`, `parseAll`, `toJson`, `toYaml`, `render`, `valueToJson`, `indentToWhitespace`. |
+| `src/Parser.zig` | Recursive descent parser. Handles all YAML 1.2 node types: block/flow collections, all scalar styles, anchors/aliases, merge keys, tags, directives, complex keys, multi-document streams. State: byte position, allocator, anchor map, depth counter, options. |
+| `src/Renderer.zig` | Serializes `comb.Value` back to normalized YAML. Handles quoting decisions (reserved words, numbers, whitespace, control characters), indentation, block collections, special floats, binary encoding, key sorting. |
+| `src/Value.zig` | `Value` tagged union (string, integer, float, boolean, null_val, array, object, binary, tagged), `Entry` with `keyLessThan` comparator, `Tagged`, conversion to `std.json.Value`, deep equality. |
+| `src/options.zig` | Shared configuration types: `ParseOptions`, `DuplicateKeyBehavior`, `Diagnostics`, `OutputOptions`, `Parsed(T)`, `Error`. Leaf module with no project imports. |
+| `src/schema.zig` | YAML 1.2 Core Schema type detection: `detectScalarType`, `parseBoolStr`, `isReservedScalar`, `looksLikeNumber`. Single source of truth for null/boolean/infinity/NaN string spellings. |
+| `src/diagnostic.zig` | Error-location utility: `setError` populates `Diagnostics` with line, column, source line excerpt from a byte position. |
+| `src/main.zig` | CLI entry point. Argument parsing, file/stdin I/O, JSON/YAML output modes. |
+| `src/yaml_suite_runner.zig` | YAML Test Suite runner. Parses grouped `.test` files and validates parser output against expected JSON. Four-category tracking with expected-failures list. |
+| `tools/fetch_suite.zig` | Build tool. Clones the upstream YAML Test Suite, reads tags for grouping, and regenerates `.test` files. |
 
 ### Parser Structure
 
@@ -109,7 +109,7 @@ var json_parsed = try comb.parseFromSlice(std.json.Value, allocator, yaml_input,
 defer json_parsed.deinit();
 
 // Parse all documents in a stream
-var docs = try comb.parseAll(allocator, yaml_input);
+var docs = try comb.parseAll(allocator, yaml_input, .{});
 defer docs.deinit();
 
 // YAML -> JSON string
@@ -165,13 +165,13 @@ Three layers of tests, all run via `zig build test`:
 
 ### YAML Test Suite conformance
 
-From the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite) (`data-2022-01-17` tag -- the latest dated release of the test data). Tests are stored in 13 grouped `.test` files using HTML comment delimiters, organized by upstream tags (e.g. `literal.test`, `flow.test`, `mapping.test`).
+From the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite) (`data-2022-01-17` tag -- the latest dated release of the test data). Tests are stored in grouped `.test` files using HTML comment delimiters, organized by upstream tags (e.g. `literal.test`, `flow.test`, `mapping.test`).
 
 Four-category tracking:
-- **291 passed** -- correct output
-- **111 expected failures** -- tracked in `yaml_suite_runner.zig` with categorized reasons (too_permissive, parse_error, json_mismatch, multi_doc_json)
-- **0 unexpected failures** -- any regression fails the build
-- **0 unexpected passes** -- stale expected-failures entries also fail the build
+- **Passed** -- correct output
+- **Expected failures** -- tracked in `yaml_suite_runner.zig` with categorized reasons (too_permissive, parse_error, json_mismatch, multi_doc_json)
+- **Unexpected failures** -- any regression fails the build
+- **Unexpected passes** -- stale expected-failure entries also fail the build
 
 ### Unit tests
 
@@ -179,15 +179,16 @@ Inline `test` blocks across source modules:
 
 | Module | Coverage |
 |--------|----------|
-| `root.zig` | Every public API function, error handling, options, diagnostics, idempotence, roundtrip fidelity |
+| `root.zig` | All public API functions, error handling, options, diagnostics, idempotence, roundtrip fidelity, regression tests for bug fixes |
 | `Parser.zig` | Scalar types, quoting, escapes, collections, documents, anchors, tags, complex keys |
+| `Renderer.zig` | Scalars, maps, arrays, nesting, key sorting, special floats, quoting decisions (reserved words, numbers, whitespace, control characters), binary, tagged values, complex keys, custom indent |
 | `Value.zig` | `std.json.Value` conversion, deep equality, edge cases |
-| `Renderer.zig` | Scalars, maps, arrays, nesting, key sorting, special floats, quoting decisions, binary, tagged values, complex keys, custom indent |
+| `schema.zig` | All `detectScalarType` variants (null, bool, int, float, inf, nan, octal, hex, string), `parseBoolStr`, `isReservedScalar`, `looksLikeNumber` edge cases |
 | `diagnostic.zig` | Error position computation at start/middle/end of input |
 
 ### CLI integration tests
 
-Success and error cases in `build.zig`. Each spawns the built `comb` binary with controlled stdin and arguments, then asserts on stdout content or exit code. Covers all CLI flags: `--pretty`, `--yaml`, `--all`, `--sort-keys`, `--indent`, `--allow-duplicate-keys`, `--help`, `-h`, and error conditions.
+Success and error cases in `build.zig`. Each spawns the built `comb` binary with controlled stdin and arguments, then asserts on stdout content or exit code. Covers all CLI flags and their interactions.
 
 ### Updating conformance tests
 

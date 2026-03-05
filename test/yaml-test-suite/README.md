@@ -1,7 +1,7 @@
 # YAML Test Suite
 
 Test cases from the [YAML Test Suite](https://github.com/yaml/yaml-test-suite),
-branch `data-2022-01-17` (commit `6e6c296`).
+tag `data-2022-01-17` (the latest dated release of the test data).
 
 ## Format
 
