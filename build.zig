@@ -151,6 +151,27 @@ fn addCliTests(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Buil
             .args = &.{ "--yaml", "--sort-keys" },
             .expected = "a: 1\nb: 2\nc: 3\n",
         },
+        // --yaml with custom indent
+        .{
+            .name = "cli: YAML with indent 4",
+            .stdin = "a:\n  b: 1\n",
+            .args = &.{ "--yaml", "--indent", "4" },
+            .expected = "a: \n    b: 1\n",
+        },
+        // --yaml with nested array
+        .{
+            .name = "cli: YAML nested array",
+            .stdin = "items:\n- 1\n- 2\n",
+            .args = &.{"--yaml"},
+            .expected = "items: \n  - 1\n  - 2\n",
+        },
+        // --yaml with special scalar values
+        .{
+            .name = "cli: YAML special values",
+            .stdin = "a: true\nb: null\nc: 42\n",
+            .args = &.{"--yaml"},
+            .expected = "a: true\nb: null\nc: 42\n",
+        },
         // --help flag
         .{
             .name = "cli: help flag",

@@ -285,3 +285,135 @@ test "render: empty collections" {
     defer alloc.free(empty_obj);
     try std.testing.expectEqualStrings("{}", empty_obj);
 }
+
+test "render: nested map in array" {
+    const alloc = std.testing.allocator;
+    const inner = [_]Entry{
+        .{ .key = .{ .string = "key" }, .value = .{ .string = "val" } },
+    };
+    const items = [_]Value{.{ .object = &inner }};
+    const result = try render(alloc, .{ .array = &items }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("- \n  key: val", result);
+}
+
+test "render: array in map" {
+    const alloc = std.testing.allocator;
+    const arr = [_]Value{ .{ .integer = 1 }, .{ .integer = 2 } };
+    const entries = [_]Entry{
+        .{ .key = .{ .string = "items" }, .value = .{ .array = &arr } },
+    };
+    const result = try render(alloc, .{ .object = &entries }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("items: \n  - 1\n  - 2", result);
+}
+
+test "render: deeply nested maps" {
+    const alloc = std.testing.allocator;
+    const inner = [_]Entry{
+        .{ .key = .{ .string = "c" }, .value = .{ .integer = 1 } },
+    };
+    const mid = [_]Entry{
+        .{ .key = .{ .string = "b" }, .value = .{ .object = &inner } },
+    };
+    const outer = [_]Entry{
+        .{ .key = .{ .string = "a" }, .value = .{ .object = &mid } },
+    };
+    const result = try render(alloc, .{ .object = &outer }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("a: \n  b: \n    c: 1", result);
+}
+
+test "render: binary value" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .binary = "Hello" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("!!binary |\n  SGVsbG8=\n", result);
+}
+
+test "render: tagged value" {
+    const alloc = std.testing.allocator;
+    const inner: Value = .{ .string = "hello" };
+    const result = try render(alloc, .{ .tagged = .{ .tag = "!custom", .value = &inner } }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("!custom hello", result);
+}
+
+test "render: complex key" {
+    const alloc = std.testing.allocator;
+    const entries = [_]Entry{
+        .{ .key = .{ .integer = 42 }, .value = .{ .string = "val" } },
+    };
+    const result = try render(alloc, .{ .object = &entries }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("? 42\n: val", result);
+}
+
+test "render: string with newline" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "line1\nline2" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("\"line1\\nline2\"", result);
+}
+
+test "render: string with control character" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "a\x01:b" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("\"a\\x01:b\"", result);
+}
+
+test "render: string with carriage return" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "line1\rline2" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("\"line1\\rline2\"", result);
+}
+
+test "render: string starting with dash" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "- hello" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'- hello'", result);
+}
+
+test "render: string containing colon" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "key: value" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'key: value'", result);
+}
+
+test "render: string containing hash" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "has # comment" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'has # comment'", result);
+}
+
+test "render: numeric string quoted" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .string = "42" }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("'42'", result);
+}
+
+test "render: negative infinity" {
+    const alloc = std.testing.allocator;
+    const result = try render(alloc, .{ .float = -std.math.inf(f64) }, .{});
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("-.inf", result);
+}
+
+test "render: custom indent size" {
+    const alloc = std.testing.allocator;
+    const inner = [_]Entry{
+        .{ .key = .{ .string = "b" }, .value = .{ .integer = 1 } },
+    };
+    const outer = [_]Entry{
+        .{ .key = .{ .string = "a" }, .value = .{ .object = &inner } },
+    };
+    const result = try render(alloc, .{ .object = &outer }, .{ .indent = 4 });
+    defer alloc.free(result);
+    try std.testing.expectEqualStrings("a: \n    b: 1", result);
+}

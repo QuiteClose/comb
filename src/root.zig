@@ -336,6 +336,39 @@ test "render: without sort_keys preserves order" {
     try testing.expect(a_pos < b_pos);
 }
 
+test "toYaml: nested roundtrip fidelity" {
+    const input = "users:\n- name: Alice\n  age: 30\n- name: Bob\n  age: 25\n";
+    const yaml = try toYaml(testing.allocator, input, .{});
+    defer testing.allocator.free(yaml);
+    const json1 = try toJson(testing.allocator, input, .{ .sort_keys = true });
+    defer testing.allocator.free(json1);
+    const json2 = try toJson(testing.allocator, yaml, .{ .sort_keys = true });
+    defer testing.allocator.free(json2);
+    try testing.expectEqualStrings(json1, json2);
+}
+
+test "toYaml: special values roundtrip" {
+    const input = "inf_val: .inf\nnan_val: .nan\nbool_val: true\nnull_val: null\n";
+    const yaml = try toYaml(testing.allocator, input, .{});
+    defer testing.allocator.free(yaml);
+    const json1 = try toJson(testing.allocator, input, .{ .sort_keys = true });
+    defer testing.allocator.free(json1);
+    const json2 = try toJson(testing.allocator, yaml, .{ .sort_keys = true });
+    defer testing.allocator.free(json2);
+    try testing.expectEqualStrings(json1, json2);
+}
+
+test "toYaml: nested arrays roundtrip" {
+    const input = "matrix:\n- - 1\n  - 2\n- - 3\n  - 4\n";
+    const yaml = try toYaml(testing.allocator, input, .{});
+    defer testing.allocator.free(yaml);
+    const json1 = try toJson(testing.allocator, input, .{});
+    defer testing.allocator.free(json1);
+    const json2 = try toJson(testing.allocator, yaml, .{});
+    defer testing.allocator.free(json2);
+    try testing.expectEqualStrings(json1, json2);
+}
+
 test "valueToJson: compact" {
     var p = try parse(testing.allocator, "key: val");
     defer p.deinit();
