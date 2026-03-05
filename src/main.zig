@@ -1,3 +1,6 @@
+//! CLI for the comb YAML parser. Reads YAML from files or stdin and
+//! outputs JSON (compact or pretty-printed) or normalized YAML.
+
 const std = @import("std");
 const comb = @import("comb");
 

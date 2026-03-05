@@ -1,6 +1,12 @@
+//! Recursive descent YAML 1.2 parser. Consumes a byte slice and produces
+//! `Value` nodes. Handles block and flow collections, all scalar styles,
+//! anchors/aliases, merge keys, tags, directives, and multi-document streams.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const opts = @import("options.zig");
+const schema = @import("schema.zig");
+const diagnostic = @import("diagnostic.zig");
 const value_mod = @import("Value.zig");
 const Value = value_mod.Value;
 const Entry = value_mod.Entry;
@@ -17,6 +23,7 @@ options: opts.ParseOptions,
 depth: u16,
 anchors: std.StringHashMap(Value),
 
+/// Create a new parser for the given input with the specified options.
 pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions) Parser {
     return .{
         .input = input,
@@ -28,6 +35,7 @@ pub fn init(allocator: Allocator, input: []const u8, options: opts.ParseOptions)
     };
 }
 
+/// Parse a single YAML document from the input.
 pub fn parseDocument(self: *Parser) opts.Error!Value {
     self.skipBom();
     self.skipWhitespaceAndComments();
@@ -51,6 +59,7 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
     return self.parseNode(0);
 }
 
+/// Parse all YAML documents from the input as a multi-document stream.
 pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
     self.skipBom();
     var docs: std.ArrayList(Value) = .empty;
@@ -254,7 +263,7 @@ fn applyTag(self: *Parser, value: Value, tag: []const u8) opts.Error!Value {
         };
     } else if (std.mem.eql(u8, tag, "!!bool")) {
         return switch (value) {
-            .string => |s| .{ .boolean = parseBoolStr(s) orelse return self.fail("InvalidNumber") },
+            .string => |s| .{ .boolean = schema.parseBoolStr(s) orelse return self.fail("InvalidNumber") },
             .boolean => value,
             else => value,
         };
@@ -617,7 +626,7 @@ fn parseInlineValue(self: *Parser) opts.Error!Value {
     self.skipNewline();
 
     if (raw.len == 0) return .{ .null_val = {} };
-    return detectScalarType(raw);
+    return schema.detectScalarType(raw);
 }
 
 // ── Block sequence ──────────────────────────────────────────────────────
@@ -830,14 +839,14 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
     }
 
     if (parts.items.len == 0) return .{ .null_val = {} };
-    if (parts.items.len == 1) return detectScalarType(parts.items[0]);
+    if (parts.items.len == 1) return schema.detectScalarType(parts.items[0]);
 
     var result: std.ArrayList(u8) = .empty;
     for (parts.items, 0..) |part, i| {
         if (i > 0) result.append(self.allocator, ' ') catch return error.OutOfMemory;
         result.appendSlice(self.allocator, part) catch return error.OutOfMemory;
     }
-    return detectScalarType(result.toOwnedSlice(self.allocator) catch return error.OutOfMemory);
+    return schema.detectScalarType(result.toOwnedSlice(self.allocator) catch return error.OutOfMemory);
 }
 
 fn parseFlowKey(self: *Parser) opts.Error!Value {
@@ -863,7 +872,7 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
 
     const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
     if (raw.len == 0) return .{ .string = "" };
-    return detectScalarType(raw);
+    return schema.detectScalarType(raw);
 }
 
 // ── Block scalar ────────────────────────────────────────────────────────
@@ -1086,7 +1095,7 @@ fn parsePlainScalar(self: *Parser, min_col: usize) opts.Error!Value {
     if (parts.items.len == 0) return .{ .null_val = {} };
 
     if (parts.items.len == 1) {
-        return detectScalarType(parts.items[0].text);
+        return schema.detectScalarType(parts.items[0].text);
     }
 
     var result: std.ArrayList(u8) = .empty;
@@ -1112,48 +1121,6 @@ fn readValueLine(self: *Parser) []const u8 {
         self.pos += 1;
     }
     return std.mem.trimRight(u8, self.input[start..self.pos], " \t");
-}
-
-fn detectScalarType(raw: []const u8) Value {
-    if (raw.len == 0 or std.mem.eql(u8, raw, "~") or
-        std.mem.eql(u8, raw, "null") or std.mem.eql(u8, raw, "Null") or
-        std.mem.eql(u8, raw, "NULL"))
-    {
-        return .{ .null_val = {} };
-    }
-
-    if (std.mem.eql(u8, raw, "true") or std.mem.eql(u8, raw, "True") or std.mem.eql(u8, raw, "TRUE"))
-        return .{ .boolean = true };
-    if (std.mem.eql(u8, raw, "false") or std.mem.eql(u8, raw, "False") or std.mem.eql(u8, raw, "FALSE"))
-        return .{ .boolean = false };
-
-    if (std.mem.eql(u8, raw, ".inf") or std.mem.eql(u8, raw, ".Inf") or std.mem.eql(u8, raw, ".INF"))
-        return .{ .float = std.math.inf(f64) };
-    if (std.mem.eql(u8, raw, "-.inf") or std.mem.eql(u8, raw, "-.Inf") or std.mem.eql(u8, raw, "-.INF"))
-        return .{ .float = -std.math.inf(f64) };
-    if (std.mem.eql(u8, raw, ".nan") or std.mem.eql(u8, raw, ".NaN") or std.mem.eql(u8, raw, ".NAN"))
-        return .{ .float = std.math.nan(f64) };
-
-    if (raw.len >= 2 and raw[0] == '0' and raw[1] == 'o') {
-        if (std.fmt.parseInt(i64, raw[2..], 8)) |v| return .{ .integer = v } else |_| {}
-    }
-    if (raw.len >= 2 and raw[0] == '0' and (raw[1] == 'x' or raw[1] == 'X')) {
-        if (std.fmt.parseInt(i64, raw[2..], 16)) |v| return .{ .integer = v } else |_| {}
-    }
-
-    if (std.fmt.parseInt(i64, raw, 10)) |v| return .{ .integer = v } else |_| {}
-
-    if (raw[0] == '-' or raw[0] == '+' or raw[0] == '.' or (raw[0] >= '0' and raw[0] <= '9')) {
-        if (std.fmt.parseFloat(f64, raw)) |v| return .{ .float = v } else |_| {}
-    }
-
-    return .{ .string = raw };
-}
-
-fn parseBoolStr(s: []const u8) ?bool {
-    if (std.mem.eql(u8, s, "true") or std.mem.eql(u8, s, "True") or std.mem.eql(u8, s, "TRUE")) return true;
-    if (std.mem.eql(u8, s, "false") or std.mem.eql(u8, s, "False") or std.mem.eql(u8, s, "FALSE")) return false;
-    return null;
 }
 
 // ── Quoted strings ──────────────────────────────────────────────────────
@@ -1577,26 +1544,8 @@ fn findKeyValueSep(line: []const u8) ?usize {
 
 fn fail(self: *Parser, comptime which: []const u8) opts.Error {
     if (self.options.diagnostics) |diag| {
-        var line: usize = 1;
-        var col: usize = 1;
-        var line_start: usize = 0;
-        for (self.input[0..@min(self.pos, self.input.len)], 0..) |c, i| {
-            if (c == '\n') {
-                line += 1;
-                col = 1;
-                line_start = i + 1;
-            } else {
-                col += 1;
-            }
-        }
-        var line_end = line_start;
-        while (line_end < self.input.len and self.input[line_end] != '\n') line_end += 1;
-        diag.line = line;
-        diag.column = col;
-        diag.message = which;
-        diag.source_line = self.input[line_start..line_end];
+        diagnostic.setError(diag, self.input, self.pos, which);
     }
-
     return @field(opts.Error, which);
 }
 

@@ -1,17 +1,30 @@
+//! YAML value types with full fidelity: scalars, collections, binary, and tags.
+//! Provides conversion to `std.json.Value` for JSON interop.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const json = std.json;
 
+/// A key-value pair in a YAML mapping, preserving insertion order.
 pub const Entry = struct {
     key: Value,
     value: Value,
+
+    /// Comparator for sorting entries by string key. Non-string keys sort as empty string.
+    pub fn keyLessThan(_: void, a: Entry, b: Entry) bool {
+        const ak: []const u8 = switch (a.key) { .string => |s| s, else => "" };
+        const bk: []const u8 = switch (b.key) { .string => |s| s, else => "" };
+        return std.mem.order(u8, ak, bk) == .lt;
+    }
 };
 
+/// A tagged YAML node (e.g. `!custom value`).
 pub const Tagged = struct {
     tag: []const u8,
     value: *const Value,
 };
 
+/// A YAML value with full fidelity: scalars, collections, binary, and tags.
 pub const Value = union(enum) {
     string: []const u8,
     integer: i64,

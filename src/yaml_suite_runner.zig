@@ -1,3 +1,7 @@
+//! YAML Test Suite runner. Parses grouped `.test` files (Toupee-style HTML
+//! comment delimiters) and validates comb's output against the official
+//! YAML Test Suite expected results.
+
 const std = @import("std");
 const mem = std.mem;
 const Allocator = std.mem.Allocator;

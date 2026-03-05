@@ -1,10 +1,15 @@
+//! YAML renderer: serializes a `comb.Value` tree back to normalized YAML text.
+//! Supports configurable indentation and key sorting for idempotent output.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const opts = @import("options.zig");
+const schema = @import("schema.zig");
 const value_mod = @import("Value.zig");
 const Value = value_mod.Value;
 const Entry = value_mod.Entry;
 
+/// Render a `Value` as a normalized YAML string.
 pub fn render(allocator: Allocator, value: Value, options: opts.OutputOptions) opts.Error![]const u8 {
     var out: std.io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
@@ -57,19 +62,7 @@ fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, inden
             defer if (sort_buf) |buf| allocator.free(buf);
             const sorted: []const Entry = if (options.sort_keys) blk: {
                 sort_buf = try allocator.dupe(Entry, entries);
-                std.mem.sortUnstable(Entry, sort_buf.?, {}, struct {
-                    fn lessThan(_: void, a: Entry, b: Entry) bool {
-                        const ak: []const u8 = switch (a.key) {
-                            .string => |s| s,
-                            else => "",
-                        };
-                        const bk: []const u8 = switch (b.key) {
-                            .string => |s| s,
-                            else => "",
-                        };
-                        return std.mem.order(u8, ak, bk) == .lt;
-                    }
-                }.lessThan);
+                std.mem.sortUnstable(Entry, sort_buf.?, {}, Entry.keyLessThan);
                 break :blk sort_buf.?;
             } else entries;
 
@@ -174,22 +167,13 @@ fn needsQuoting(s: []const u8) bool {
         return true;
     }
 
-    if (std.mem.eql(u8, s, "null") or std.mem.eql(u8, s, "Null") or std.mem.eql(u8, s, "NULL") or
-        std.mem.eql(u8, s, "true") or std.mem.eql(u8, s, "True") or std.mem.eql(u8, s, "TRUE") or
-        std.mem.eql(u8, s, "false") or std.mem.eql(u8, s, "False") or std.mem.eql(u8, s, "FALSE") or
-        std.mem.eql(u8, s, "~") or
-        std.mem.eql(u8, s, ".inf") or std.mem.eql(u8, s, ".Inf") or std.mem.eql(u8, s, ".INF") or
-        std.mem.eql(u8, s, "-.inf") or std.mem.eql(u8, s, "-.Inf") or std.mem.eql(u8, s, "-.INF") or
-        std.mem.eql(u8, s, ".nan") or std.mem.eql(u8, s, ".NaN") or std.mem.eql(u8, s, ".NAN"))
-    {
-        return true;
-    }
+    if (schema.isReservedScalar(s)) return true;
 
     for (s) |c| {
         if (c == ':' or c == '#' or c == '\n' or c == '\r') return true;
     }
 
-    if (looksLikeNumber(s)) return true;
+    if (schema.looksLikeNumber(s)) return true;
 
     return false;
 }
@@ -200,15 +184,6 @@ fn needsDoubleQuoting(s: []const u8) bool {
         if (c == 0x7F) return true;
     }
     return false;
-}
-
-fn looksLikeNumber(s: []const u8) bool {
-    if (s.len == 0) return false;
-    var start: usize = 0;
-    if (s[0] == '-' or s[0] == '+') start = 1;
-    if (start >= s.len) return false;
-    if (s[start] == '.') return start + 1 < s.len and s[start + 1] >= '0' and s[start + 1] <= '9';
-    return s[start] >= '0' and s[start] <= '9';
 }
 
 fn isCollection(value: Value) bool {

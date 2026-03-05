@@ -36,6 +36,7 @@ pub const OutputOptions = opts.OutputOptions;
 /// Call `deinit()` to free all memory when done.
 pub const Parsed = opts.Parsed;
 
+/// All errors that can occur during YAML parsing.
 pub const Error = opts.Error;
 
 /// Parse YAML into T (either std.json.Value or comb.Value).
@@ -132,19 +133,7 @@ fn sortedToStdJson(allocator: Allocator, value: Value) error{OutOfMemory}!std.js
     switch (value) {
         .object => |entries| {
             const sorted = try allocator.dupe(Entry, entries);
-            std.mem.sortUnstable(Entry, sorted, {}, struct {
-                fn lessThan(_: void, a: Entry, b: Entry) bool {
-                    const ak: []const u8 = switch (a.key) {
-                        .string => |s| s,
-                        else => "",
-                    };
-                    const bk: []const u8 = switch (b.key) {
-                        .string => |s| s,
-                        else => "",
-                    };
-                    return std.mem.order(u8, ak, bk) == .lt;
-                }
-            }.lessThan);
+            std.mem.sortUnstable(Entry, sorted, {}, Entry.keyLessThan);
             var map = std.json.ObjectMap.init(allocator);
             try map.ensureTotalCapacity(@intCast(sorted.len));
             for (sorted) |entry| {
@@ -166,6 +155,7 @@ fn sortedToStdJson(allocator: Allocator, value: Value) error{OutOfMemory}!std.js
     }
 }
 
+/// Convert an indent size to the corresponding `std.json.Stringify` whitespace option.
 pub fn indentToWhitespace(indent: u8) @TypeOf(@as(std.json.Stringify.Options, .{}).whitespace) {
     return switch (indent) {
         0 => .minified,
@@ -180,6 +170,8 @@ pub fn indentToWhitespace(indent: u8) @TypeOf(@as(std.json.Stringify.Options, .{
 test {
     _ = value_mod;
     _ = opts;
+    _ = @import("schema.zig");
+    _ = @import("diagnostic.zig");
     _ = @import("Parser.zig");
     _ = @import("Renderer.zig");
     _ = @import("yaml_suite_runner.zig");
