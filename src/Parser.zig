@@ -168,9 +168,11 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
             result = try self.parseBlockMappingFromFirstKey(result, col);
         }
     } else if (c == '[') {
-        result = try self.parseFlowSequence();
+        result = try self.parseFlowSequence(min_col);
+        try self.rejectTrailingFlowContent();
     } else if (c == '{') {
-        result = try self.parseFlowMapping();
+        result = try self.parseFlowMapping(min_col);
+        try self.rejectTrailingFlowContent();
     } else if (c == '"') {
         const str = try self.parseDoubleQuoted();
         self.skipInlineSpace();
@@ -453,7 +455,7 @@ fn parseMergeValue(self: *Parser, entries: *std.ArrayList(Entry), indent: usize)
     }
 
     if (self.peek() == '[') {
-        const val = try self.parseFlowSequence();
+        const val = try self.parseFlowSequence(indent + 1);
         switch (val) {
             .array => |arr| {
                 for (arr) |item| try self.applyMerge(entries, item);
@@ -575,8 +577,16 @@ fn parseBlockMappingValue(self: *Parser, map_indent: usize) opts.Error!Value {
     defer self.depth -= 1;
 
     const c = self.peek();
-    if (c == '[') return self.parseFlowSequence();
-    if (c == '{') return self.parseFlowMapping();
+    if (c == '[') {
+        const val = try self.parseFlowSequence(map_indent + 1);
+        try self.rejectTrailingFlowContent();
+        return val;
+    }
+    if (c == '{') {
+        const val = try self.parseFlowMapping(map_indent + 1);
+        try self.rejectTrailingFlowContent();
+        return val;
+    }
     if (c == '|' or c == '>') return self.parseBlockScalar(map_indent);
     if (c == '*') return self.parseAlias();
     if (c == '&') {
@@ -659,7 +669,7 @@ fn parseBlockSequence(self: *Parser, indent: usize) opts.Error!Value {
 
 // ── Flow collections ────────────────────────────────────────────────────
 
-fn parseFlowSequence(self: *Parser) opts.Error!Value {
+fn parseFlowSequence(self: *Parser, min_indent: usize) opts.Error!Value {
     if (self.atEnd() or self.peek() != '[') return self.fail("UnexpectedCharacter");
     self.pos += 1;
     self.depth += 1;
@@ -673,6 +683,7 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
         self.pos += 1;
         return .{ .array = items.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
     }
+    if (!self.atEnd() and self.peek() == ',') return self.fail("UnexpectedCharacter");
 
     while (!self.atEnd()) {
         try self.skipFlowWhitespace();
@@ -681,8 +692,9 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
             self.pos += 1;
             return .{ .array = items.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
         }
+        if (self.isDocumentMarker()) return self.fail("UnexpectedCharacter");
+        try self.rejectFlowBelowIndent(min_indent);
 
-        // Explicit key with ? creates a mapping entry in the sequence
         if (self.peek() == '?' and self.isFlowIndicatorNext()) {
             self.pos += 1;
             try self.skipFlowWhitespace();
@@ -699,10 +711,16 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
             const owned = self.allocator.dupe(Entry, &entry) catch return error.OutOfMemory;
             items.append(self.allocator, .{ .object = owned }) catch return error.OutOfMemory;
         } else {
+            const pre_val = self.pos;
             const val = try self.parseFlowValue();
 
+            const pre_ws = self.pos;
             try self.skipFlowWhitespace();
-            if (!self.atEnd() and self.peek() == ':' and self.isFlowIndicatorNext()) {
+            const adjacent = (self.pos == pre_ws);
+            const crossed_line = std.mem.indexOfScalar(u8, self.input[pre_val..self.pos], '\n') != null or
+                std.mem.indexOfScalar(u8, self.input[pre_val..self.pos], '\r') != null;
+            if (!self.atEnd() and self.peek() == ':' and (adjacent or self.isFlowIndicatorNext())) {
+                if (crossed_line) return self.fail("UnexpectedCharacter");
                 self.pos += 1;
                 try self.skipFlowWhitespace();
                 const map_val = if (!self.atEnd() and self.peek() != ',' and self.peek() != ']')
@@ -718,15 +736,20 @@ fn parseFlowSequence(self: *Parser) opts.Error!Value {
         }
 
         try self.skipFlowWhitespace();
-        if (!self.atEnd() and self.peek() == ',') {
+        if (self.atEnd()) return self.fail("UnclosedFlowSequence");
+        if (self.peek() == ',') {
             self.pos += 1;
+            try self.skipFlowWhitespace();
+            if (!self.atEnd() and self.peek() == ',') return self.fail("UnexpectedCharacter");
+        } else if (self.peek() != ']') {
+            return self.fail("UnexpectedCharacter");
         }
     }
 
     return self.fail("UnclosedFlowSequence");
 }
 
-fn parseFlowMapping(self: *Parser) opts.Error!Value {
+fn parseFlowMapping(self: *Parser, min_indent: usize) opts.Error!Value {
     if (self.atEnd() or self.peek() != '{') return self.fail("UnexpectedCharacter");
     self.pos += 1;
     self.depth += 1;
@@ -740,6 +763,7 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
         self.pos += 1;
         return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
     }
+    if (!self.atEnd() and self.peek() == ',') return self.fail("UnexpectedCharacter");
 
     while (!self.atEnd()) {
         try self.skipFlowWhitespace();
@@ -748,6 +772,8 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
             self.pos += 1;
             return .{ .object = entries.toOwnedSlice(self.allocator) catch return error.OutOfMemory };
         }
+        if (self.isDocumentMarker()) return self.fail("UnexpectedCharacter");
+        try self.rejectFlowBelowIndent(min_indent);
 
         var key: Value = undefined;
         if (self.peek() == '?' and self.isFlowIndicatorNext()) {
@@ -772,8 +798,13 @@ fn parseFlowMapping(self: *Parser) opts.Error!Value {
         entries.append(self.allocator, .{ .key = key, .value = value }) catch return error.OutOfMemory;
 
         try self.skipFlowWhitespace();
-        if (!self.atEnd() and self.peek() == ',') {
+        if (self.atEnd()) return self.fail("UnclosedFlowMapping");
+        if (self.peek() == ',') {
             self.pos += 1;
+            try self.skipFlowWhitespace();
+            if (!self.atEnd() and self.peek() == ',') return self.fail("UnexpectedCharacter");
+        } else if (self.peek() != '}') {
+            return self.fail("UnexpectedCharacter");
         }
     }
 
@@ -785,11 +816,20 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return .{ .null_val = {} };
 
     const c = self.peek();
-    if (c == '[') return self.parseFlowSequence();
-    if (c == '{') return self.parseFlowMapping();
+    if (c == '[') return self.parseFlowSequence(0);
+    if (c == '{') return self.parseFlowMapping(0);
     if (c == '"') return .{ .string = try self.parseDoubleQuoted() };
     if (c == '\'') return .{ .string = try self.parseSingleQuoted() };
     if (c == '*') return self.parseAlias();
+    if (c == '-' or c == '?') {
+        const next_pos = self.pos + 1;
+        if (next_pos >= self.input.len) return self.fail("UnexpectedCharacter");
+        const next = self.input[next_pos];
+        if (next == ',' or next == ']' or next == '}' or next == ' ' or next == '\t' or
+            next == '\n' or next == '\r') return self.fail("UnexpectedCharacter");
+    }
+    if (c == '#' or c == '|' or c == '>' or c == '%' or c == '@' or c == '`')
+        return self.fail("UnexpectedCharacter");
     if (c == '&') {
         const name = try self.parseAnchorDef();
         try self.skipFlowWhitespace();
@@ -1519,6 +1559,24 @@ fn checkNoTabIndent(self: *Parser) opts.Error!void {
     }
 }
 
+/// Reject flow continuation lines indented below the required level.
+fn rejectFlowBelowIndent(self: *Parser, min_indent: usize) opts.Error!void {
+    if (min_indent == 0) return;
+    if (self.currentCol() < min_indent) return self.fail("UnexpectedCharacter");
+}
+
+/// Check for invalid trailing content after a flow collection on the same line.
+fn rejectTrailingFlowContent(self: *Parser) opts.Error!void {
+    self.skipInlineSpace();
+    if (self.atEnd() or self.atEndOfLine()) return;
+    const c = self.peek();
+    if (c == ':') return;
+    if (c == '#' and self.pos > 0 and
+        (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t'))
+        return;
+    return self.fail("UnexpectedCharacter");
+}
+
 /// Reject tab only when it precedes another block indicator (-, ?, :).
 /// Allows tab before content like `-\tbaz` or `-\t-1`.
 fn rejectTabBeforeBlockIndicator(self: *Parser) opts.Error!void {
@@ -1609,7 +1667,10 @@ fn skipFlowWhitespace(self: *Parser) opts.Error!void {
                 }
             }
             self.pos += 1;
-        } else if (c == '#') {
+        } else if (c == '#' and self.pos > 0 and
+            (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t' or
+            self.input[self.pos - 1] == '\n' or self.input[self.pos - 1] == '\r'))
+        {
             self.skipToEndOfLine();
         } else break;
     }
