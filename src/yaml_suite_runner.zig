@@ -23,7 +23,6 @@ const expected_failures: []const ExpectedFailure = &.{
     // Parser accepts invalid YAML that should be rejected (too permissive)
     .{ .id = "3HFZ", .reason = .too_permissive },
     .{ .id = "4JVG", .reason = .too_permissive },
-    .{ .id = "5LLU", .reason = .too_permissive },
     .{ .id = "5U3A", .reason = .too_permissive },
     .{ .id = "8XDJ", .reason = .too_permissive },
     .{ .id = "9HCY", .reason = .too_permissive },
@@ -36,11 +35,7 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "EB22", .reason = .too_permissive },
     .{ .id = "KS4U", .reason = .too_permissive },
     .{ .id = "MUS6/01", .reason = .too_permissive },
-    .{ .id = "S4GJ", .reason = .too_permissive },
-    .{ .id = "S98Z", .reason = .too_permissive },
     .{ .id = "TD5N", .reason = .too_permissive },
-    .{ .id = "W9L4", .reason = .too_permissive },
-    .{ .id = "X4QW", .reason = .too_permissive },
     .{ .id = "ZCZ6", .reason = .too_permissive },
 };
 

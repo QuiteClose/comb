@@ -1053,13 +1053,20 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
         } else if (c >= '1' and c <= '9') {
             explicit_indent = c - '0';
             self.pos += 1;
-        } else if (c == ' ' or c == '#') {
+        } else if (c == ' ') {
+            break;
+        } else if (c == '#') {
+            if (self.pos > 0 and self.input[self.pos - 1] != ' ' and self.input[self.pos - 1] != '\t')
+                return self.fail("InvalidBlockScalar");
             break;
         } else {
             return self.fail("InvalidBlockScalar");
         }
     }
 
+    self.skipInlineSpace();
+    if (!self.atEnd() and !self.atEndOfLine() and self.peek() != '#')
+        return self.fail("InvalidBlockScalar");
     self.skipToEndOfLine();
     self.skipNewline();
 
@@ -1069,6 +1076,7 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
     if (explicit_indent) |ei| {
         content_indent = (parent_indent orelse 0) + ei;
     }
+    var last_empty_indent: usize = 0;
 
     while (self.pos < self.input.len) {
         if (self.startsWith("---") and self.currentCol() == 0) break;
@@ -1083,6 +1091,8 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
 
         const stripped = std.mem.trimLeft(u8, line, " ");
         if (stripped.len == 0) {
+            if (content_indent == null and line.len > last_empty_indent)
+                last_empty_indent = line.len;
             if (content_indent != null and line.len >= content_indent.?) {
                 lines.append(self.allocator, line[content_indent.?..]) catch return error.OutOfMemory;
             } else {
@@ -1099,6 +1109,8 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
             if (parent_indent) |pi| {
                 if (line_indent <= pi) break;
             }
+            if (line_indent < last_empty_indent)
+                return self.fail("InvalidBlockScalar");
             content_indent = line_indent;
         } else if (lines.items.len == 0 and line_indent < content_indent.?) {
             if (explicit_indent != null) {
