@@ -20,15 +20,12 @@ const FailureReason = enum {
 };
 
 const expected_failures: []const ExpectedFailure = &.{
-    // Parser accepts invalid YAML that should be rejected
-    .{ .id = "2CMS", .reason = .too_permissive },
+    // Parser accepts invalid YAML that should be rejected (too permissive)
     .{ .id = "3HFZ", .reason = .too_permissive },
-    .{ .id = "4HVU", .reason = .too_permissive },
     .{ .id = "4JVG", .reason = .too_permissive },
     .{ .id = "5LLU", .reason = .too_permissive },
     .{ .id = "5TRB", .reason = .too_permissive },
     .{ .id = "5U3A", .reason = .too_permissive },
-    .{ .id = "6S55", .reason = .too_permissive },
     .{ .id = "7LBH", .reason = .too_permissive },
     .{ .id = "8XDJ", .reason = .too_permissive },
     .{ .id = "9HCY", .reason = .too_permissive },
@@ -42,20 +39,14 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "C2SP", .reason = .too_permissive },
     .{ .id = "CXX2", .reason = .too_permissive },
     .{ .id = "D49Q", .reason = .too_permissive },
-    .{ .id = "DMG6", .reason = .too_permissive },
     .{ .id = "EB22", .reason = .too_permissive },
-    .{ .id = "EW3V", .reason = .too_permissive },
     .{ .id = "GT5M", .reason = .too_permissive },
     .{ .id = "H7TQ", .reason = .too_permissive },
-    .{ .id = "HU3P", .reason = .too_permissive },
     .{ .id = "JKF3", .reason = .too_permissive },
-    .{ .id = "JY7Z", .reason = .too_permissive },
     .{ .id = "KS4U", .reason = .too_permissive },
     .{ .id = "LHL4", .reason = .too_permissive },
     .{ .id = "MUS6/00", .reason = .too_permissive },
     .{ .id = "MUS6/01", .reason = .too_permissive },
-    .{ .id = "N4JP", .reason = .too_permissive },
-    .{ .id = "Q4CL", .reason = .too_permissive },
     .{ .id = "QB6E", .reason = .too_permissive },
     .{ .id = "QLJ7", .reason = .too_permissive },
     .{ .id = "RXY3", .reason = .too_permissive },
@@ -65,16 +56,11 @@ const expected_failures: []const ExpectedFailure = &.{
     .{ .id = "SR86", .reason = .too_permissive },
     .{ .id = "SU5Z", .reason = .too_permissive },
     .{ .id = "SU74", .reason = .too_permissive },
-    .{ .id = "SY6V", .reason = .too_permissive },
     .{ .id = "TD5N", .reason = .too_permissive },
-    .{ .id = "U44R", .reason = .too_permissive },
     .{ .id = "U99R", .reason = .too_permissive },
     .{ .id = "W9L4", .reason = .too_permissive },
     .{ .id = "X4QW", .reason = .too_permissive },
     .{ .id = "ZCZ6", .reason = .too_permissive },
-    .{ .id = "ZL4Z", .reason = .too_permissive },
-    .{ .id = "ZVH3", .reason = .too_permissive },
-
 };
 
 fn isExpectedFailure(id: []const u8) ?FailureReason {

@@ -58,7 +58,9 @@ pub fn parseDocument(self: *Parser) opts.Error!Value {
     if (self.atEnd()) return .{ .null_val = {} };
     if (self.startsWith("...")) return .{ .null_val = {} };
 
-    return self.parseNode(0);
+    const val = try self.parseNode(0);
+    try self.rejectOrphanContent();
+    return val;
 }
 
 /// Parse all YAML documents from the input as a multi-document stream.
@@ -83,10 +85,12 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
                     docs.append(self.allocator, .{ .null_val = {} }) catch return error.OutOfMemory;
                 } else {
                     const val = try self.parseNode(0);
+                    try self.rejectOrphanContent();
                     docs.append(self.allocator, val) catch return error.OutOfMemory;
                 }
             } else if (!self.atEnd() and !self.atEndOfLine()) {
                 const val = try self.parseNode(0);
+                try self.rejectOrphanContent();
                 docs.append(self.allocator, val) catch return error.OutOfMemory;
             } else {
                 docs.append(self.allocator, .{ .null_val = {} }) catch return error.OutOfMemory;
@@ -99,6 +103,7 @@ pub fn parseAllDocuments(self: *Parser) opts.Error![]const Value {
             self.parseDirective();
         } else {
             const val = try self.parseNode(0);
+            try self.rejectOrphanContent();
             docs.append(self.allocator, val) catch return error.OutOfMemory;
         }
     }
@@ -170,9 +175,27 @@ fn parseNode(self: *Parser, min_col: usize) opts.Error!Value {
     } else if (c == '[') {
         result = try self.parseFlowSequence(min_col);
         try self.rejectTrailingFlowContent();
+        self.skipInlineSpace();
+        if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
+            (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+            self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
+        {
+            if (tag) |t| { result = try self.applyTag(result, t); tag = null; }
+            if (anchor_name) |name| { self.anchors.put(name, result) catch return error.OutOfMemory; anchor_name = null; }
+            result = try self.parseBlockMappingFromFirstKey(result, col);
+        }
     } else if (c == '{') {
         result = try self.parseFlowMapping(min_col);
         try self.rejectTrailingFlowContent();
+        self.skipInlineSpace();
+        if (!self.atEnd() and !self.atEndOfLine() and self.peek() == ':' and
+            (self.pos + 1 >= self.input.len or self.input[self.pos + 1] == ' ' or
+            self.input[self.pos + 1] == '\n' or self.input[self.pos + 1] == '\r'))
+        {
+            if (tag) |t| { result = try self.applyTag(result, t); tag = null; }
+            if (anchor_name) |name| { self.anchors.put(name, result) catch return error.OutOfMemory; anchor_name = null; }
+            result = try self.parseBlockMappingFromFirstKey(result, col);
+        }
     } else if (c == '"') {
         const str = try self.parseDoubleQuoted();
         self.skipInlineSpace();
@@ -1557,6 +1580,15 @@ fn checkNoTabIndent(self: *Parser) opts.Error!void {
         if (self.input[p] == '\t') return self.fail("TabInIndentation");
         if (self.input[p] != ' ') return;
     }
+}
+
+/// Reject remaining content that sits at an indentation level where nothing
+/// expects it (e.g. content between the block indent and a nested indent).
+fn rejectOrphanContent(self: *Parser) opts.Error!void {
+    self.skipWhitespaceAndComments();
+    if (self.atEnd()) return;
+    if (self.isDocumentMarker()) return;
+    if (self.currentCol() > 0) return self.fail("UnexpectedCharacter");
 }
 
 /// Reject flow continuation lines indented below the required level.
