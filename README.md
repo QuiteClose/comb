@@ -10,7 +10,7 @@ Straightens out YAML. A YAML 1.2 parser and renderer for Zig.
 - **JSON output** -- convert YAML to JSON via `std.json` with pretty-print and compact modes
 - **Error diagnostics** -- line, column, source excerpt, and error kind on parse failure
 - **Zero dependencies** -- pure Zig, no external libraries
-- **Conformance tested** -- validated against the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite); all 402 cases pass
+- **Conformance tested** -- validated against the official [YAML Test Suite](https://github.com/yaml/yaml-test-suite); all cases pass
 
 ## Building
 

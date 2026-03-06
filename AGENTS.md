@@ -2,7 +2,7 @@
 
 YAML 1.2 parser, renderer, and JSON interop library for Zig. Parses YAML into a typed value tree, serializes to JSON or normalized YAML, and provides a CLI for format conversion. Zero external dependencies.
 
-**Status:** Feature-complete. All 402 YAML Test Suite cases pass.
+**Status:** Feature-complete. All YAML Test Suite cases pass.
 
 ## Architecture
 

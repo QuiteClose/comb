@@ -1,3 +1,4 @@
+//! Fetches the official YAML Test Suite and generates grouped `.test` files for the conformance runner.
 const std = @import("std");
 const fs = std.fs;
 const mem = std.mem;

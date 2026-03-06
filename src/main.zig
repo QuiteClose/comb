@@ -4,6 +4,7 @@
 const std = @import("std");
 const comb = @import("comb");
 
+/// Entry point. Parses CLI arguments, reads YAML, and writes output.
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
