@@ -220,6 +220,7 @@ fn addCliTests(b: *std.Build, exe: *std.Build.Step.Compile, test_step: *std.Buil
         run.setStdIn(.{ .bytes = case.stdin });
         for (case.args) |arg| run.addArg(arg);
         run.expectExitCode(1);
+        _ = run.captureStdErr();
         test_step.dependOn(&run.step);
     }
 }
