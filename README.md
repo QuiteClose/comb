@@ -1,5 +1,7 @@
 # Comb
 
+[![CI](https://github.com/QuiteClose/comb/actions/workflows/ci.yml/badge.svg)](https://github.com/QuiteClose/comb/actions/workflows/ci.yml)
+
 Straightens out YAML. A YAML 1.2 parser and renderer for Zig.
 
 ## Features
