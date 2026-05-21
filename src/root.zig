@@ -119,7 +119,7 @@ pub fn valueToJson(allocator: Allocator, value: Value, options: OutputOptions) e
     else
         try value.toStdJsonValue(aa);
 
-    var out: std.io.Writer.Allocating = .init(allocator);
+    var out: std.Io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
 
     const ws = indentToWhitespace(options.indent);
@@ -134,8 +134,8 @@ fn sortedToStdJson(allocator: Allocator, value: Value) error{OutOfMemory}!std.js
         .object => |entries| {
             const sorted = try allocator.dupe(Entry, entries);
             std.mem.sortUnstable(Entry, sorted, {}, Entry.keyLessThan);
-            var map = std.json.ObjectMap.init(allocator);
-            try map.ensureTotalCapacity(@intCast(sorted.len));
+            var map: std.json.ObjectMap = .empty;
+            try map.ensureTotalCapacity(allocator, @intCast(sorted.len));
             for (sorted) |entry| {
                 const key_str = try entry.key.toKeyString(allocator);
                 const val = try sortedToStdJson(allocator, entry.value);
