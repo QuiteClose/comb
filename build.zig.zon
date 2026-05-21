@@ -1,6 +1,6 @@
 .{
     .name = .comb,
-    .version = "1.0.1",
+    .version = "1.2.0",
     .fingerprint = 0x38b31e72dca1cc4b,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
