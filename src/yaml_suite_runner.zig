@@ -341,11 +341,13 @@ test "YAML Test Suite conformance" {
         }
     }
 
-    std.debug.print("\n  YAML Test Suite: {d} passed, {d} failed ({d} total)\n\n", .{
-        total.passed,
-        total.failed,
-        total.total(),
-    });
+    if (total.failed > 0) {
+        std.debug.print("\n  YAML Test Suite: {d} passed, {d} failed ({d} total)\n\n", .{
+            total.passed,
+            total.failed,
+            total.total(),
+        });
+    }
 
     try std.testing.expectEqual(@as(usize, 0), total.failed);
 }
