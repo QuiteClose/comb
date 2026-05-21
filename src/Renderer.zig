@@ -11,13 +11,13 @@ const Entry = value_mod.Entry;
 
 /// Render a `Value` as a normalized YAML string.
 pub fn render(allocator: Allocator, value: Value, options: opts.OutputOptions) opts.Error![]const u8 {
-    var out: std.io.Writer.Allocating = .init(allocator);
+    var out: std.Io.Writer.Allocating = .init(allocator);
     errdefer out.deinit();
     renderValue(allocator, &out.writer, value, 0, options, false) catch return error.OutOfMemory;
     return out.toOwnedSlice() catch return error.OutOfMemory;
 }
 
-fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, indent_level: usize, options: opts.OutputOptions, inline_first: bool) !void {
+fn renderValue(allocator: Allocator, writer: *std.Io.Writer, value: Value, indent_level: usize, options: opts.OutputOptions, inline_first: bool) !void {
     switch (value) {
         .string => |s| try renderString(writer, s),
         .integer => |i| try writer.print("{d}", .{i}),
@@ -116,7 +116,7 @@ fn renderValue(allocator: Allocator, writer: *std.io.Writer, value: Value, inden
     }
 }
 
-fn renderString(writer: *std.io.Writer, s: []const u8) !void {
+fn renderString(writer: *std.Io.Writer, s: []const u8) !void {
     if (s.len == 0) {
         try writer.writeAll("''");
         return;
@@ -198,7 +198,7 @@ fn isCollection(value: Value) bool {
     };
 }
 
-fn writeIndent(writer: *std.io.Writer, level: usize, indent_size: u8) !void {
+fn writeIndent(writer: *std.Io.Writer, level: usize, indent_size: u8) !void {
     try writer.splatByteAll(' ', level * indent_size);
 }
 

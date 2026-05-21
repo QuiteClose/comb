@@ -623,7 +623,7 @@ fn parseBlockMappingKey(self: *Parser) opts.Error!Value {
         self.pos += 1;
     }
 
-    const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+    const raw = std.mem.trimEnd(u8, self.input[start..self.pos], " \t");
     return .{ .string = raw };
 }
 
@@ -990,7 +990,7 @@ fn parseFlowValue(self: *Parser) opts.Error!Value {
             self.pos += 1;
         }
 
-        const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+        const raw = std.mem.trimEnd(u8, self.input[start..self.pos], " \t");
         if (raw.len > 0) {
             parts.append(self.allocator, raw) catch return error.OutOfMemory;
         }
@@ -1059,7 +1059,7 @@ fn parseFlowKey(self: *Parser) opts.Error!Value {
             self.pos += 1;
         }
 
-        const raw = std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+        const raw = std.mem.trimEnd(u8, self.input[start..self.pos], " \t");
         if (raw.len > 0) {
             parts.append(self.allocator, raw) catch return error.OutOfMemory;
         }
@@ -1143,7 +1143,7 @@ fn parseBlockScalar(self: *Parser, parent_indent: ?usize) opts.Error!Value {
         if (line.len > 0 and line[0] == '\t')
             return self.fail("TabInIndentation");
 
-        const stripped = std.mem.trimLeft(u8, line, " ");
+        const stripped = std.mem.trimStart(u8, line, " ");
         if (stripped.len == 0) {
             if (content_indent == null and line.len > last_empty_indent)
                 last_empty_indent = line.len;
@@ -1341,7 +1341,7 @@ fn readValueLine(self: *Parser) []const u8 {
         if (self.input[self.pos] == '#' and self.pos > start and (self.input[self.pos - 1] == ' ' or self.input[self.pos - 1] == '\t')) break;
         self.pos += 1;
     }
-    return std.mem.trimRight(u8, self.input[start..self.pos], " \t");
+    return std.mem.trimEnd(u8, self.input[start..self.pos], " \t");
 }
 
 // ── Quoted strings ──────────────────────────────────────────────────────

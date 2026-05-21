@@ -214,7 +214,7 @@ fn parseMultiJsonValues(allocator: Allocator, json_str: []const u8) ![]JsonParse
     var remaining = json_str;
 
     while (true) {
-        remaining = mem.trimLeft(u8, remaining, " \t\n\r");
+        remaining = mem.trimStart(u8, remaining, " \t\n\r");
         if (remaining.len == 0) break;
 
         const end_pos = findJsonValueEnd(remaining) orelse return error.OutOfMemory;
@@ -314,17 +314,18 @@ fn jsonEqual(a: std.json.Value, b: std.json.Value) bool {
 
 test "YAML Test Suite conformance" {
     const alloc = std.testing.allocator;
+    const io = std.testing.io;
 
-    var suite_dir = std.fs.cwd().openDir("test/yaml-test-suite", .{ .iterate = true }) catch |err| {
+    var suite_dir = std.Io.Dir.openDir(std.Io.Dir.cwd(), io, "test/yaml-test-suite", .{ .iterate = true }) catch |err| {
         std.debug.print("\n  Could not open test/yaml-test-suite: {}\n", .{err});
         return;
     };
-    defer suite_dir.close();
+    defer suite_dir.close(io);
 
     var total = TestResults{};
 
     var dir_it = suite_dir.iterate();
-    while (dir_it.next() catch null) |entry| {
+    while (dir_it.next(io) catch null) |entry| {
         if (entry.kind != .file) continue;
         if (!mem.endsWith(u8, entry.name, ".test")) continue;
 
@@ -332,7 +333,7 @@ test "YAML Test Suite conformance" {
         defer arena.deinit();
         const aa = arena.allocator();
 
-        const content = suite_dir.readFileAlloc(aa, entry.name, 4 * 1024 * 1024) catch continue;
+        const content = std.Io.Dir.readFileAlloc(suite_dir, io, entry.name, aa, .limited(4 * 1024 * 1024)) catch continue;
         const cases = parseTestFile(aa, content) catch continue;
 
         for (cases) |tc| {

@@ -55,8 +55,8 @@ pub const Value = union(enum) {
                 return .{ .array = json_arr };
             },
             .object => |entries| {
-                var map = json.ObjectMap.init(allocator);
-                try map.ensureTotalCapacity(@intCast(entries.len));
+                var map: json.ObjectMap = .empty;
+                try map.ensureTotalCapacity(allocator, @intCast(entries.len));
                 for (entries) |entry| {
                     const key_str = try entry.key.toKeyString(allocator);
                     const val = try entry.value.toStdJsonValue(allocator);
@@ -83,7 +83,7 @@ pub const Value = union(enum) {
             .null_val => allocator.dupe(u8, "null"),
             else => {
                 const jv = try self.toStdJsonValue(allocator);
-                var out: std.io.Writer.Allocating = .init(allocator);
+                var out: std.Io.Writer.Allocating = .init(allocator);
                 errdefer out.deinit();
                 var jw: json.Stringify = .{ .writer = &out.writer, .options = .{} };
                 jw.write(jv) catch return error.OutOfMemory;
@@ -256,7 +256,7 @@ test "toStdJsonValue: object" {
     };
     const result = try (Value{ .object = &entries }).toStdJsonValue(alloc);
     var m = result.object;
-    defer m.deinit();
+    defer m.deinit(alloc);
 
     try std.testing.expectEqualStrings("Alice", m.get("name").?.string);
     try std.testing.expectEqual(@as(i64, 30), m.get("age").?.integer);

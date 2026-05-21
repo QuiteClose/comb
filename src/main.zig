@@ -5,13 +5,19 @@ const std = @import("std");
 const comb = @import("comb");
 
 /// Entry point. Parses CLI arguments, reads YAML, and writes output.
-pub fn main() !void {
+pub fn main(init: std.process.Init.Minimal) !void {
     const allocator = std.heap.page_allocator;
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
+    const io = std.Io.Threaded.global_single_threaded.io();
 
-    const args = try std.process.argsAlloc(alloc);
+    var args_iter = std.process.Args.Iterator.init(init.args);
+    var args_list: std.ArrayListUnmanaged([]const u8) = .empty;
+    while (args_iter.next()) |arg| {
+        try args_list.append(alloc, try alloc.dupe(u8, arg));
+    }
+    const args = args_list.items;
 
     var file_path: ?[]const u8 = null;
     var mode: enum { json_compact, json_pretty, yaml } = .json_compact;
@@ -24,7 +30,7 @@ pub fn main() !void {
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
-            try printUsage();
+            try printUsage(io);
             return;
         } else if (std.mem.eql(u8, arg, "--pretty")) {
             mode = .json_pretty;
@@ -57,13 +63,13 @@ pub fn main() !void {
     }
 
     const input = if (file_path) |path|
-        std.fs.cwd().readFileAlloc(alloc, path, 10 * 1024 * 1024) catch |err| {
+        std.Io.Dir.readFileAlloc(std.Io.Dir.cwd(), io, path, alloc, .limited(10 * 1024 * 1024)) catch |err| {
             std.debug.print("error: cannot read '{s}': {}\n", .{ path, err });
             std.process.exit(1);
         }
     else blk: {
         var stdin_buf: [4096]u8 = undefined;
-        var stdin_r = std.fs.File.stdin().reader(&stdin_buf);
+        var stdin_r = std.Io.File.stdin().reader(io, &stdin_buf);
         break :blk stdin_r.interface.allocRemaining(alloc, .limited(10 * 1024 * 1024)) catch |err| {
             std.debug.print("error: cannot read stdin: {}\n", .{err});
             std.process.exit(1);
@@ -71,7 +77,7 @@ pub fn main() !void {
     };
 
     var stdout_buf: [4096]u8 = undefined;
-    var stdout_w = std.fs.File.stdout().writer(&stdout_buf);
+    var stdout_w = std.Io.File.stdout().writer(io, &stdout_buf);
     const stdout = &stdout_w.interface;
     defer stdout.flush() catch {};
 
@@ -163,9 +169,9 @@ pub fn main() !void {
     }
 }
 
-fn printUsage() !void {
+fn printUsage(io: std.Io) !void {
     var buf: [4096]u8 = undefined;
-    var w = std.fs.File.stdout().writer(&buf);
+    var w = std.Io.File.stdout().writer(io, &buf);
     const stdout = &w.interface;
     defer stdout.flush() catch {};
     try stdout.writeAll(
